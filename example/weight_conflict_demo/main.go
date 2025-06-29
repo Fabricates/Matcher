@@ -1,0 +1,151 @@
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/worthies/matcher"
+)
+
+func main() {
+	fmt.Println("=== Weight Conflict Detection Demo ===")
+
+	// Create a new matcher engine
+	persistence := matcher.NewJSONPersistence("./data")
+	engine, err := matcher.NewMatcherEngine(persistence, nil, "weight-demo")
+	if err != nil {
+		log.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	fmt.Println("\n1. Testing default behavior (weight conflicts disabled)")
+
+	// Add first rule
+	rule1 := matcher.NewRule("rule1").
+		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
+		Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
+		Metadata("description", "First rule with weight 15.0").
+		Build()
+
+	if err := engine.AddRule(rule1); err != nil {
+		log.Printf("Failed to add rule1: %v", err)
+	} else {
+		fmt.Printf("✅ Added rule1 with total weight: %.2f\n", rule1.CalculateTotalWeight())
+	}
+
+	// Try to add second rule with same calculated weight
+	rule2 := matcher.NewRule("rule2").
+		Dimension("product", "ProductB", matcher.MatchTypeEqual, 7.0).
+		Dimension("environment", "staging", matcher.MatchTypeEqual, 8.0).
+		Metadata("description", "Second rule also with weight 15.0").
+		Build()
+
+	if err := engine.AddRule(rule2); err != nil {
+		fmt.Printf("❌ Failed to add rule2: %v\n", err)
+	} else {
+		fmt.Printf("✅ Added rule2 with total weight: %.2f\n", rule2.CalculateTotalWeight())
+	}
+
+	fmt.Println("\n2. Enabling duplicate weights")
+	engine.SetAllowDuplicateWeights(true)
+
+	// Now try to add the same rule again
+	if err := engine.AddRule(rule2); err != nil {
+		fmt.Printf("❌ Failed to add rule2 after enabling duplicates: %v\n", err)
+	} else {
+		fmt.Printf("✅ Successfully added rule2 with duplicate weight: %.2f\n", rule2.CalculateTotalWeight())
+	}
+
+	// Add another rule with the same weight
+	rule3 := matcher.NewRule("rule3").
+		Dimension("product", "ProductC", matcher.MatchTypeEqual, 3.0).
+		Dimension("environment", "development", matcher.MatchTypeEqual, 12.0).
+		Metadata("description", "Third rule also with weight 15.0").
+		Build()
+
+	if err := engine.AddRule(rule3); err != nil {
+		fmt.Printf("❌ Failed to add rule3: %v\n", err)
+	} else {
+		fmt.Printf("✅ Added rule3 with total weight: %.2f\n", rule3.CalculateTotalWeight())
+	}
+
+	fmt.Println("\n3. Testing manual weight conflicts")
+
+	// Add rule with manual weight
+	rule4 := matcher.NewRule("rule4").
+		Dimension("product", "ProductD", matcher.MatchTypeEqual, 1.0).
+		ManualWeight(25.0).
+		Metadata("description", "Rule with manual weight override").
+		Build()
+
+	if err := engine.AddRule(rule4); err != nil {
+		fmt.Printf("❌ Failed to add rule4: %v\n", err)
+	} else {
+		fmt.Printf("✅ Added rule4 with manual weight: %.2f\n", rule4.CalculateTotalWeight())
+	}
+
+	// Try to add another rule with same manual weight
+	rule5 := matcher.NewRule("rule5").
+		Dimension("product", "ProductE", matcher.MatchTypeEqual, 50.0).
+		ManualWeight(25.0). // Same manual weight
+		Metadata("description", "Another rule with same manual weight").
+		Build()
+
+	if err := engine.AddRule(rule5); err != nil {
+		fmt.Printf("❌ Failed to add rule5: %v\n", err)
+	} else {
+		fmt.Printf("✅ Added rule5 with manual weight: %.2f\n", rule5.CalculateTotalWeight())
+	}
+
+	fmt.Println("\n4. Disabling duplicate weights again")
+	engine.SetAllowDuplicateWeights(false)
+
+	// Try to add another rule with conflicting weight
+	rule6 := matcher.NewRule("rule6").
+		Dimension("product", "ProductF", matcher.MatchTypeEqual, 25.0).
+		Metadata("description", "Rule that conflicts with manual weight").
+		Build()
+
+	if err := engine.AddRule(rule6); err != nil {
+		fmt.Printf("❌ Failed to add rule6: %v\n", err)
+	} else {
+		fmt.Printf("✅ Added rule6 with total weight: %.2f\n", rule6.CalculateTotalWeight())
+	}
+
+	fmt.Println("\n5. Testing queries with duplicate weights")
+
+	// Test query that matches multiple rules
+	query := matcher.CreateQuery(map[string]string{
+		"product":     "ProductB",
+		"environment": "staging",
+	})
+
+	result, err := engine.FindBestMatch(query)
+	if err != nil {
+		log.Printf("Query failed: %v", err)
+	} else if result != nil {
+		fmt.Printf("🎯 Best match: %s (weight: %.2f, description: %s)\n",
+			result.Rule.ID, result.TotalWeight, result.Rule.Metadata["description"])
+	} else {
+		fmt.Println("❌ No matches found")
+	}
+
+	// Find all matches
+	allMatches, err := engine.FindAllMatches(query)
+	if err != nil {
+		log.Printf("FindAllMatches failed: %v", err)
+	} else {
+		fmt.Printf("\n📋 All matches (%d found):\n", len(allMatches))
+		for i, match := range allMatches {
+			fmt.Printf("  %d. %s (weight: %.2f)\n", i+1, match.Rule.ID, match.TotalWeight)
+		}
+	}
+
+	// Get engine statistics
+	stats := engine.GetStats()
+	fmt.Printf("\n📊 Engine Statistics:\n")
+	fmt.Printf("  Total Rules: %d\n", stats.TotalRules)
+	fmt.Printf("  Cache Hit Rate: %.2f%%\n", stats.CacheHitRate*100)
+
+	fmt.Println("\n🎉 Weight conflict detection demo completed!")
+}
