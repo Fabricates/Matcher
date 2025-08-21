@@ -31,6 +31,7 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 
 - **Pluggable Persistence**: JSON, Database, or custom storage backends
 - **Event-Driven Updates**: Kafka/messaging queue integration for distributed rule updates
+- **Redis Synchronization**: Built-in Redis streams support for simpler distributed deployments
 - **Health Monitoring**: Comprehensive statistics and health checks
 - **Concurrent Safe**: Thread-safe operations with RWMutex protection
 - **Backward Compatibility**: ForestIndex wrapper maintains compatibility with existing code
@@ -664,6 +665,45 @@ The system has been thoroughly tested and **exceeds all production requirements*
 ✅ **Partial Query Support**: Search with fewer dimensions via MatchTypeAny branches  
 ✅ **Dimension Consistency**: Enforced rule structure consistency when dimensions are configured  
 ✅ **Match Type Optimization**: Direct access to relevant branches eliminates unnecessary traversal  
+
+## 🔄 Redis-based Synchronization
+
+The matcher now includes built-in Redis streams support for distributed synchronization, offering a simpler alternative to Kafka-based messaging.
+
+### Key Features
+
+- **Idempotent Processing**: Events have unique IDs to prevent duplicate processing
+- **Change Listeners**: Real-time synchronization of rules and dimensions
+- **Redis Streams**: Reliable message delivery with consumer groups
+- **Drop-in Replacement**: Same EventBrokerInterface as Kafka broker
+
+### Quick Start
+
+```go
+// Create Redis broker
+broker := matcher.NewRedisEventBroker(
+    "localhost:6379",     // Redis address
+    "",                   // Password (empty for no auth)
+    0,                    // Database number
+    "matcher-events",     // Stream key
+    "matcher-group",      // Consumer group
+    "node-1"             // Node ID
+)
+
+// Create matcher with Redis synchronization
+persistence := matcher.NewJSONPersistence("./data")
+matcher, err := matcher.NewInMemoryMatcher(persistence, broker, "node-1")
+
+// Rules automatically sync across all instances
+rule := matcher.NewRule("sync-rule").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
+    Build()
+matcher.AddRule(rule) // Synchronized to all nodes
+```
+
+### Documentation
+
+See [REDIS_SYNC.md](REDIS_SYNC.md) for complete documentation, configuration options, and troubleshooting.
 
 ## 🏆 Production Considerations
 
