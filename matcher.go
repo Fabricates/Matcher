@@ -2,6 +2,8 @@ package matcher
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
@@ -23,6 +25,15 @@ type InMemoryMatcher struct {
 	mu                    sync.RWMutex
 	ctx                   context.Context
 	cancel                context.CancelFunc
+}
+
+// generateEventID generates a unique event ID with timestamp and random component
+func generateEventID() string {
+	timestamp := time.Now().UnixNano()
+	bytes := make([]byte, 8)
+	rand.Read(bytes)
+	randomPart := hex.EncodeToString(bytes)
+	return fmt.Sprintf("%d-%s", timestamp, randomPart)
 }
 
 // CreateInMemoryMatcher creates an in-memory matcher
@@ -194,6 +205,7 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	// Publish event to message queue
 	if m.eventBroker != nil {
 		event := &Event{
+			ID:        generateEventID(),
 			Type:      EventTypeRuleAdded,
 			Timestamp: now,
 			NodeID:    m.nodeID,
@@ -239,6 +251,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	// Publish event to message queue
 	if m.eventBroker != nil {
 		event := &Event{
+			ID:        generateEventID(),
 			Type:      EventTypeRuleUpdated,
 			Timestamp: time.Now(),
 			NodeID:    m.nodeID,
@@ -283,6 +296,7 @@ func (m *InMemoryMatcher) deleteRule(ruleID string) error {
 	// Publish event to message queue
 	if m.eventBroker != nil {
 		event := &Event{
+			ID:        generateEventID(),
 			Type:      EventTypeRuleDeleted,
 			Timestamp: time.Now(),
 			NodeID:    m.nodeID,
@@ -324,6 +338,7 @@ func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
 	// Publish event to message queue
 	if m.eventBroker != nil {
 		event := &Event{
+			ID:        generateEventID(),
 			Type:      EventTypeDimensionAdded,
 			Timestamp: time.Now(),
 			NodeID:    m.nodeID,
@@ -357,6 +372,7 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 	// Publish event to message queue if dimension existed
 	if exists && m.eventBroker != nil {
 		event := &Event{
+			ID:        generateEventID(),
 			Type:      EventTypeDimensionDeleted,
 			Timestamp: time.Now(),
 			NodeID:    m.nodeID,

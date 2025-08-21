@@ -462,6 +462,7 @@ func TestEventSubscription(t *testing.T) {
 		Build()
 
 	event := &Event{
+		ID:        generateEventID(),
 		Type:      EventTypeRuleAdded,
 		Timestamp: time.Now(),
 		Data:      &RuleEvent{Rule: rule},

@@ -96,6 +96,7 @@ const (
 
 // Event represents an event from the message queue
 type Event struct {
+	ID        string      `json:"id"`        // Unique event ID for idempotence
 	Type      EventType   `json:"type"`
 	Timestamp time.Time   `json:"timestamp"`
 	NodeID    string      `json:"node_id"` // ID of the node that published this event
