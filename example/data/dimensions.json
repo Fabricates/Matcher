@@ -1,0 +1,50 @@
+[
+  {
+    "name": "recipe",
+    "index": 4,
+    "required": false,
+    "weight": 12
+  },
+  {
+    "name": "region",
+    "index": 5,
+    "required": false,
+    "weight": 7
+  },
+  {
+    "name": "priority",
+    "index": 6,
+    "required": false,
+    "weight": 15
+  },
+  {
+    "name": "environment",
+    "index": 7,
+    "required": false,
+    "weight": 5
+  },
+  {
+    "name": "product",
+    "index": 0,
+    "required": true,
+    "weight": 10
+  },
+  {
+    "name": "tool_id",
+    "index": 3,
+    "required": false,
+    "weight": 3
+  },
+  {
+    "name": "route",
+    "index": 1,
+    "required": false,
+    "weight": 5
+  },
+  {
+    "name": "tool",
+    "index": 2,
+    "required": false,
+    "weight": 8
+  }
+]
