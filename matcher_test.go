@@ -403,10 +403,16 @@ func TestDynamicDimensions(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add test dimensions including required ones
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize test dimensions: %v", err)
+	}
+
 	// Add custom dimension
 	customDim := &DimensionConfig{
 		Name:     "custom_dimension",
-		Index:    0,
+		Index:    5,
 		Required: false,
 		Weight:   20.0,
 	}
@@ -416,8 +422,9 @@ func TestDynamicDimensions(t *testing.T) {
 		t.Fatalf("Failed to add custom dimension: %v", err)
 	}
 
-	// Add rule using custom dimension
+	// Add rule using custom dimension and required dimensions
 	rule := NewRule("custom_rule").
+		Dimension("product", "CustomProduct", MatchTypeEqual, 10.0). // Required dimension
 		Dimension("custom_dimension", "custom_value", MatchTypeEqual, 20.0).
 		Build()
 
@@ -428,6 +435,7 @@ func TestDynamicDimensions(t *testing.T) {
 
 	// Test query with custom dimension
 	query := CreateQuery(map[string]string{
+		"product":          "CustomProduct",
 		"custom_dimension": "custom_value",
 	})
 
@@ -581,5 +589,123 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 	err = engine.AddRule(rule5)
 	if err != nil {
 		t.Fatalf("Failed to add rule with only required dimensions: %v", err)
+	}
+}
+
+func TestRebuild(t *testing.T) {
+	// Create engine with mock persistence
+	persistence := NewJSONPersistence("./test_data_rebuild")
+	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-rebuild")
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Add initial test dimensions
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add some rules
+	rule1 := NewRule("rebuild_test_1").
+		Dimension("product", "Product1", MatchTypeEqual, 10.0).
+		Dimension("route", "Route1", MatchTypeEqual, 5.0).
+		Build()
+
+	rule2 := NewRule("rebuild_test_2").
+		Dimension("product", "Product2", MatchTypeEqual, 10.0).
+		Dimension("tool", "Tool2", MatchTypeEqual, 8.0).
+		Build()
+
+	err = engine.AddRule(rule1)
+	if err != nil {
+		t.Fatalf("Failed to add rule1: %v", err)
+	}
+
+	err = engine.AddRule(rule2)
+	if err != nil {
+		t.Fatalf("Failed to add rule2: %v", err)
+	}
+
+	// Verify rules are loaded
+	stats := engine.GetStats()
+	if stats.TotalRules != 2 {
+		t.Fatalf("Expected 2 rules before rebuild, got %d", stats.TotalRules)
+	}
+
+	// Perform a query to populate cache
+	query := CreateQuery(map[string]string{
+		"product": "Product1",
+		"route":   "Route1",
+	})
+	result, err := engine.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Failed to query before rebuild: %v", err)
+	}
+	if result == nil {
+		t.Fatalf("Expected 1 result before rebuild, got none")
+	}
+
+	// Save current state to persistence
+	err = engine.SaveToPersistence()
+	if err != nil {
+		t.Fatalf("Failed to save before rebuild: %v", err)
+	}
+
+	// Now manually add a rule to memory (not persisted) to test rebuild clears it
+	tempRule := NewRule("temp_rule_not_persisted").
+		Dimension("product", "TempProduct", MatchTypeEqual, 10.0).
+		Build()
+
+	// Add directly to internal structures without persistence (simulate corrupted state)
+	engine.rules["temp_rule_not_persisted"] = tempRule
+	engine.forestIndex.AddRule(tempRule)
+	engine.stats.TotalRules = len(engine.rules)
+
+	// Verify temp rule exists in memory
+	stats = engine.GetStats()
+	if stats.TotalRules != 3 {
+		t.Fatalf("Expected 3 rules after adding temp rule, got %d", stats.TotalRules)
+	}
+
+	// Perform rebuild - this should clear everything and reload from persistence
+	err = engine.Rebuild()
+	if err != nil {
+		t.Fatalf("Failed to rebuild: %v", err)
+	}
+
+	// Verify rebuild restored only persisted data
+	stats = engine.GetStats()
+	if stats.TotalRules != 2 {
+		t.Fatalf("Expected 2 rules after rebuild (temp rule should be gone), got %d", stats.TotalRules)
+	}
+
+	// Verify the temp rule is gone
+	if _, exists := engine.rules["temp_rule_not_persisted"]; exists {
+		t.Fatalf("Temp rule should not exist after rebuild")
+	}
+
+	// Verify cache was cleared (check by looking at cache stats)
+	// The cache should be empty after rebuild
+	cacheStats := engine.cache.Stats()
+	totalEntries, ok := cacheStats["total_entries"].(int)
+	if !ok {
+		t.Fatalf("Expected total_entries to be an int in cache stats")
+	}
+	if totalEntries != 0 {
+		t.Fatalf("Expected cache to be empty after rebuild, got %d entries", totalEntries)
+	}
+
+	// Verify original rules still work
+	result, err = engine.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Failed to query after rebuild: %v", err)
+	}
+	if result == nil {
+		t.Fatalf("Expected result after rebuild, got none")
+	}
+	if result.Rule.ID != "rebuild_test_1" {
+		t.Fatalf("Expected rule 'rebuild_test_1' after rebuild, got %s", result.Rule.ID)
 	}
 }
