@@ -1,0 +1,32 @@
+[
+  {
+    "name": "tool",
+    "index": 2,
+    "required": false,
+    "weight": 8
+  },
+  {
+    "name": "tool_id",
+    "index": 3,
+    "required": false,
+    "weight": 3
+  },
+  {
+    "name": "recipe",
+    "index": 4,
+    "required": false,
+    "weight": 12
+  },
+  {
+    "name": "product",
+    "index": 0,
+    "required": true,
+    "weight": 10
+  },
+  {
+    "name": "route",
+    "index": 1,
+    "required": false,
+    "weight": 5
+  }
+]

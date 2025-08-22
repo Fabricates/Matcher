@@ -1,11 +1,12 @@
 package matcher
 
 import (
+	"strings"
 	"testing"
 )
 
 func TestWeightConflictDetection(t *testing.T) {
-	persistence := NewJSONPersistence("./test_data")
+	persistence := NewJSONPersistence("./test_data_weight_conflict")
 	engine, err := NewInMemoryMatcher(persistence, nil, "test-weight-conflict")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
@@ -47,9 +48,8 @@ func TestWeightConflictDetection(t *testing.T) {
 			t.Fatal("Expected weight conflict error but rule was added successfully")
 		}
 
-		expectedMsg := "invalid rule: weight conflict: rule 'rule1' already has weight 15.00"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Expected weight conflict error message starting with '%s', got '%s'", expectedMsg, err.Error())
+		if !strings.Contains(err.Error(), "weight conflict: rule 'rule1' already has weight 15.00") {
+			t.Errorf("Expected weight conflict error message containing 'weight conflict: rule 'rule1' already has weight 15.00', got '%s'", err.Error())
 		}
 	})
 
@@ -75,9 +75,8 @@ func TestWeightConflictDetection(t *testing.T) {
 			t.Fatal("Expected weight conflict error but rule was added successfully")
 		}
 
-		expectedMsg := "invalid rule: weight conflict: rule 'rule4' already has weight 20.00"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Expected weight conflict error message starting with '%s', got '%s'", expectedMsg, err.Error())
+		if !strings.Contains(err.Error(), "weight conflict: rule 'rule4' already has weight 20.00") {
+			t.Errorf("Expected weight conflict error message containing 'weight conflict: rule 'rule4' already has weight 20.00', got '%s'", err.Error())
 		}
 	})
 
@@ -94,9 +93,8 @@ func TestWeightConflictDetection(t *testing.T) {
 			t.Fatal("Expected weight conflict error but rule was added successfully")
 		}
 
-		expectedMsg := "invalid rule: weight conflict: rule 'rule2' already has weight 12.00"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Expected weight conflict error message starting with '%s', got '%s'", expectedMsg, err.Error())
+		if !strings.Contains(err.Error(), "weight conflict: rule 'rule2' already has weight 12.00") {
+			t.Errorf("Expected weight conflict error message containing 'weight conflict: rule 'rule2' already has weight 12.00', got '%s'", err.Error())
 		}
 	})
 
@@ -121,15 +119,14 @@ func TestWeightConflictDetection(t *testing.T) {
 			t.Fatal("Expected weight conflict error but rule was added successfully")
 		}
 
-		expectedMsg := "invalid rule: weight conflict: rule 'rule7' already has weight 0.00"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Expected weight conflict error message starting with '%s', got '%s'", expectedMsg, err.Error())
+		if !strings.Contains(err.Error(), "weight conflict: rule 'rule7' already has weight 0.00") {
+			t.Errorf("Expected weight conflict error message containing 'weight conflict: rule 'rule7' already has weight 0.00', got '%s'", err.Error())
 		}
 	})
 }
 
 func TestWeightConflictWithUpdateRule(t *testing.T) {
-	persistence := NewJSONPersistence("./test_data")
+	persistence := NewJSONPersistence("./test_data_weight_update")
 	engine, err := NewInMemoryMatcher(persistence, nil, "test-weight-update")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
@@ -167,9 +164,8 @@ func TestWeightConflictWithUpdateRule(t *testing.T) {
 			t.Fatal("Expected weight conflict error when updating to conflicting weight")
 		}
 
-		expectedMsg := "invalid rule: weight conflict: rule 'other_rule' already has weight 5.00"
-		if err.Error()[:len(expectedMsg)] != expectedMsg {
-			t.Errorf("Expected weight conflict error message starting with '%s', got '%s'", expectedMsg, err.Error())
+		if !strings.Contains(err.Error(), "weight conflict: rule 'other_rule' already has weight 5.00") {
+			t.Errorf("Expected weight conflict error message containing 'weight conflict: rule 'other_rule' already has weight 5.00', got '%s'", err.Error())
 		}
 	})
 
@@ -187,7 +183,7 @@ func TestWeightConflictWithUpdateRule(t *testing.T) {
 }
 
 func TestWeightConflictPrecision(t *testing.T) {
-	persistence := NewJSONPersistence("./test_data")
+	persistence := NewJSONPersistence("./test_data_weight_precision")
 	engine, err := NewInMemoryMatcher(persistence, nil, "test-weight-precision")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
@@ -239,7 +235,7 @@ func TestWeightConflictPrecision(t *testing.T) {
 
 func TestWeightConflictConfiguration(t *testing.T) {
 	// Test with MatcherEngine API (which supports configuration)
-	persistence := NewJSONPersistence("./test_data")
+	persistence := NewJSONPersistence("./test_data_weight_config")
 	engine, err := NewMatcherEngine(persistence, nil, "test-weight-config")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)

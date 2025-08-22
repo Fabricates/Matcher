@@ -592,6 +592,76 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 	return nil
 }
 
+// validateRuleForRebuild validates a rule during rebuild with provided dimension configs
+func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs map[string]*DimensionConfig) error {
+	if rule.ID == "" {
+		return fmt.Errorf("rule ID cannot be empty")
+	}
+
+	if len(rule.Dimensions) == 0 {
+		return fmt.Errorf("rule must have at least one dimension")
+	}
+
+	// Validate dimension consistency with provided configs
+	if err := m.validateDimensionConsistencyWithConfigs(rule, dimensionConfigs); err != nil {
+		return err
+	}
+
+	// Validate each dimension
+	for _, dimValue := range rule.Dimensions {
+		if dimValue.DimensionName == "" {
+			return fmt.Errorf("dimension name cannot be empty")
+		}
+
+		if dimValue.Weight < 0 {
+			return fmt.Errorf("dimension weight cannot be negative")
+		}
+	}
+
+	// Note: We skip weight conflict validation during rebuild since we're starting fresh
+	return nil
+}
+
+// validateDimensionConsistencyWithConfigs validates dimensions against provided configs
+func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, dimensionConfigs map[string]*DimensionConfig) error {
+	// Check if any dimensions are configured
+	if len(dimensionConfigs) == 0 {
+		// If no dimensions configured, allow any dimensions (for backward compatibility)
+		return nil
+	}
+
+	// Create maps for efficient lookup
+	ruleDimensions := make(map[string]*DimensionValue)
+	for _, dimValue := range rule.Dimensions {
+		ruleDimensions[dimValue.DimensionName] = dimValue
+	}
+
+	// Check all configured dimensions
+	for _, configDim := range dimensionConfigs {
+		_, exists := ruleDimensions[configDim.Name]
+
+		if configDim.Required && !exists {
+			return fmt.Errorf("rule missing required dimension '%s'", configDim.Name)
+		}
+
+		if exists {
+			// Remove from map to track processed dimensions
+			delete(ruleDimensions, configDim.Name)
+		}
+	}
+
+	// Check for extra dimensions not in configuration
+	if len(ruleDimensions) > 0 {
+		var extraDims []string
+		for dimName := range ruleDimensions {
+			extraDims = append(extraDims, dimName)
+		}
+		return fmt.Errorf("rule contains dimensions not in configuration: %v", extraDims)
+	}
+
+	return nil
+}
+
 // updateCacheStats updates cache hit rate statistics
 func (m *InMemoryMatcher) updateCacheStats(hit bool) {
 	m.mu.Lock()
@@ -696,6 +766,59 @@ func (m *InMemoryMatcher) Close() error {
 	if m.eventBroker != nil {
 		return m.eventBroker.Close()
 	}
+
+	return nil
+}
+
+// Rebuild clears all data and rebuilds the forest from the persistence interface
+func (m *InMemoryMatcher) Rebuild() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Create new structures for atomic replacement
+	newForestIndex := CreateForestIndex()
+	newDimensionConfigs := make(map[string]*DimensionConfig)
+	newRules := make(map[string]*Rule)
+
+	// Load dimension configurations from persistence
+	configs, err := m.persistence.LoadDimensionConfigs(m.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load dimension configs during rebuild: %w", err)
+	}
+
+	// Initialize dimensions in new forest
+	for _, config := range configs {
+		newDimensionConfigs[config.Name] = config
+		newForestIndex.InitializeDimension(config.Name)
+	}
+
+	// Load rules from persistence
+	rules, err := m.persistence.LoadRules(m.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load rules during rebuild: %w", err)
+	}
+
+	// Add rules to new structures
+	for _, rule := range rules {
+		// Validate rule before adding
+		if err := m.validateRuleForRebuild(rule, newDimensionConfigs); err != nil {
+			return fmt.Errorf("invalid rule during rebuild (ID: %s): %w", rule.ID, err)
+		}
+		newRules[rule.ID] = rule
+		newForestIndex.AddRule(rule)
+	}
+
+	// Replace all three core data structures atomically
+	// This ensures no query can see an inconsistent state
+	m.forestIndex, m.dimensionConfigs, m.rules = newForestIndex, newDimensionConfigs, newRules
+
+	// Clear cache after successful replacement
+	m.cache.Clear()
+
+	// Update stats
+	m.stats.TotalRules = len(m.rules)
+	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	m.stats.LastUpdated = time.Now()
 
 	return nil
 }
