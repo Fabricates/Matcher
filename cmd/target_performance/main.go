@@ -147,20 +147,20 @@ func main() {
 
 func generateSimpleRule(id int) *matcher.Rule {
 	rand.Seed(int64(id))
-	
+
 	rule := matcher.NewRule(fmt.Sprintf("rule_%06d", id))
-	
+
 	// Add required dimensions (first 3) with more predictable values
 	rule.Dimension("dim_00", fmt.Sprintf("product_%d", id%20), matcher.MatchTypeEqual, 20)
 	rule.Dimension("dim_01", fmt.Sprintf("env_%d", id%4), matcher.MatchTypeEqual, 19)
 	rule.Dimension("dim_02", fmt.Sprintf("region_%d", id%8), matcher.MatchTypeEqual, 18)
-	
+
 	// Add optional dimensions (with probability)
 	for i := 3; i < 20; i++ {
 		if rand.Float64() < 0.7 { // 70% probability
 			var matchType matcher.MatchType
 			var value string
-			
+
 			r := rand.Float64()
 			if r < 0.6 {
 				matchType = matcher.MatchTypeEqual
@@ -172,31 +172,31 @@ func generateSimpleRule(id int) *matcher.Rule {
 				matchType = matcher.MatchTypeAny
 				value = ""
 			}
-			
+
 			rule.Dimension(fmt.Sprintf("dim_%02d", i), value, matchType, float64(20-i))
 		}
 	}
-	
+
 	return rule.Build()
 }
 
 func generateSimpleQuery(id int) *matcher.QueryRule {
 	rand.Seed(int64(id + 100000))
-	
+
 	values := make(map[string]string)
-	
+
 	// Always include required dimensions with overlapping values
-	values["dim_00"] = fmt.Sprintf("product_%d", id%20)  // Same pattern as rules
-	values["dim_01"] = fmt.Sprintf("env_%d", id%4)       // Same pattern as rules  
-	values["dim_02"] = fmt.Sprintf("region_%d", id%8)    // Same pattern as rules
-	
+	values["dim_00"] = fmt.Sprintf("product_%d", id%20) // Same pattern as rules
+	values["dim_01"] = fmt.Sprintf("env_%d", id%4)      // Same pattern as rules
+	values["dim_02"] = fmt.Sprintf("region_%d", id%8)   // Same pattern as rules
+
 	// Include some optional dimensions (partial query)
 	for i := 3; i < 20; i++ {
 		if rand.Float64() < 0.4 { // 40% probability for optional dims
 			values[fmt.Sprintf("dim_%02d", i)] = fmt.Sprintf("val_%d_%d", i, id%10)
 		}
 	}
-	
+
 	return matcher.CreateQuery(values)
 }
 
