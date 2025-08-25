@@ -1,4 +1,4 @@
-module github.com/worthies/matcher
+module github.com/Fabricates/Matcher
 
 go 1.21
 
