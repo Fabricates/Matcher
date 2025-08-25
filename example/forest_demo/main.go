@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/worthies/matcher"
+	"github.com/Fabricates/Matcher"
 )
 
 func main() {

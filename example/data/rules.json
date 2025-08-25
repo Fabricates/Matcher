@@ -34,8 +34,8 @@
       }
     ],
     "manual_weight": 1,
-    "created_at": "2025-06-25T15:08:53.126104988Z",
-    "updated_at": "2025-06-25T15:08:53.126105098Z",
+    "created_at": "2025-08-25T15:14:24.862890634Z",
+    "updated_at": "2025-08-25T15:14:24.862892788Z",
     "metadata": {
       "description": "Fallback rule for unmatched queries"
     }
@@ -92,8 +92,8 @@
         "weight": 5
       }
     ],
-    "created_at": "2025-06-25T15:08:53.126073059Z",
-    "updated_at": "2025-06-25T15:08:53.126073279Z",
+    "created_at": "2025-08-25T15:14:24.862851801Z",
+    "updated_at": "2025-08-25T15:14:24.862855629Z",
     "metadata": {
       "description": "High-priority production rule"
     }
@@ -138,8 +138,8 @@
         "weight": 5
       }
     ],
-    "created_at": "2025-06-25T15:08:53.126083698Z",
-    "updated_at": "2025-06-25T15:08:53.126083829Z",
+    "created_at": "2025-08-25T15:14:24.862865958Z",
+    "updated_at": "2025-08-25T15:14:24.862867691Z",
     "metadata": {
       "description": "Development prefix matching rule"
     }
@@ -184,8 +184,8 @@
         "weight": 15
       }
     ],
-    "created_at": "2025-06-25T15:08:53.126094639Z",
-    "updated_at": "2025-06-25T15:08:53.126094749Z",
+    "created_at": "2025-08-25T15:14:24.862879283Z",
+    "updated_at": "2025-08-25T15:14:24.862881016Z",
     "metadata": {
       "description": "Suffix matching rule for beta recipes"
     }

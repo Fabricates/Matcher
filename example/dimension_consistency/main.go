@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/worthies/matcher"
+	"github.com/Fabricates/Matcher"
 )
 
 func main() {

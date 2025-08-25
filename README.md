@@ -197,7 +197,7 @@ Trees: map[MatchType][]*SharedNode
 ### Installation
 
 ```bash
-go get github.com/worthies/matcher
+go get github.com/Fabricates/Matcher
 ```
 
 ### Basic Usage
@@ -208,7 +208,7 @@ package main
 import (
     "fmt"
     "log"
-    "github.com/worthies/matcher"
+    "github.com/Fabricates/Matcher"
 )
 
 func main() {
