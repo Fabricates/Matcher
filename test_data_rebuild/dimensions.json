@@ -1,5 +1,11 @@
 [
   {
+    "name": "route",
+    "index": 1,
+    "required": false,
+    "weight": 5
+  },
+  {
     "name": "tool",
     "index": 2,
     "required": false,
@@ -22,11 +28,5 @@
     "index": 0,
     "required": true,
     "weight": 10
-  },
-  {
-    "name": "route",
-    "index": 1,
-    "required": false,
-    "weight": 5
   }
 ]
