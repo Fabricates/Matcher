@@ -528,7 +528,7 @@ result2, err := engine.FindBestMatch(query2) // Returns tenant2Rule
 - **Weight Conflicts**: Checked only within the same tenant/application scope
 - **Backward Compatibility**: Existing code continues to work unchanged
 
-See [MULTI_TENANT.md](MULTI_TENANT.md) for comprehensive documentation, migration guide, and best practices.
+See [MULTI_TENANT.md](docs/MULTI_TENANT.md) for comprehensive documentation, migration guide, and best practices.
 
 ## 📊 Performance & Statistics
 
