@@ -10,10 +10,10 @@ import (
 
 // InMemoryMatcher implements the core matching logic using forest indexes
 type InMemoryMatcher struct {
-	forestIndexes         map[string]*ForestIndex         // tenant_app_key -> ForestIndex
-	dimensionConfigs      map[string]*DimensionConfig     // dimension_name -> config (global or scoped)
-	rules                 map[string]*Rule                // rule_id -> rule
-	tenantRules           map[string]map[string]*Rule     // tenant_app_key -> rule_id -> rule
+	forestIndexes         map[string]*ForestIndex     // tenant_app_key -> ForestIndex
+	dimensionConfigs      map[string]*DimensionConfig // dimension_name -> config (global or scoped)
+	rules                 map[string]*Rule            // rule_id -> rule
+	tenantRules           map[string]map[string]*Rule // tenant_app_key -> rule_id -> rule
 	stats                 *MatcherStats
 	cache                 *QueryCache
 	persistence           PersistenceInterface
@@ -75,21 +75,21 @@ func (m *InMemoryMatcher) getTenantKey(tenantID, applicationID string) string {
 // getOrCreateForestIndex gets or creates a forest index for the specified tenant/application
 func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string) *ForestIndex {
 	key := m.getTenantKey(tenantID, applicationID)
-	
+
 	if forestIndex, exists := m.forestIndexes[key]; exists {
 		return forestIndex
 	}
-	
+
 	// Create new forest index for this tenant/application
 	newForest := CreateRuleForestWithTenant(tenantID, applicationID)
 	forestIndex := &ForestIndex{RuleForest: newForest}
 	m.forestIndexes[key] = forestIndex
-	
+
 	// Initialize tenant rules map if needed
 	if m.tenantRules[key] == nil {
 		m.tenantRules[key] = make(map[string]*Rule)
 	}
-	
+
 	return forestIndex
 }
 
@@ -127,14 +127,14 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 	// Add rules to appropriate indexes
 	for _, rule := range rules {
 		m.rules[rule.ID] = rule
-		
+
 		// Add to tenant-specific tracking
 		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 		if m.tenantRules[key] == nil {
 			m.tenantRules[key] = make(map[string]*Rule)
 		}
 		m.tenantRules[key][rule.ID] = rule
-		
+
 		// Add to appropriate forest index
 		forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
 		forestIndex.AddRule(rule)
@@ -231,14 +231,14 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 
 	// Add to internal structures
 	m.rules[rule.ID] = rule
-	
+
 	// Add to tenant-specific tracking
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 	if m.tenantRules[key] == nil {
 		m.tenantRules[key] = make(map[string]*Rule)
 	}
 	m.tenantRules[key][rule.ID] = rule
-	
+
 	// Add to appropriate forest index
 	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
 	forestIndex.AddRule(rule)
@@ -283,7 +283,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 		if oldForestIndex != nil {
 			oldForestIndex.RemoveRule(oldRule)
 		}
-		
+
 		// Remove from old tenant's tracking
 		oldKey := m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
 		if m.tenantRules[oldKey] != nil {
@@ -296,14 +296,14 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 
 	// Add updated rule
 	m.rules[rule.ID] = rule
-	
+
 	// Add to tenant-specific tracking
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 	if m.tenantRules[key] == nil {
 		m.tenantRules[key] = make(map[string]*Rule)
 	}
 	m.tenantRules[key][rule.ID] = rule
-	
+
 	// Add to appropriate forest index
 	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
 	forestIndex.AddRule(rule)
@@ -351,7 +351,7 @@ func (m *InMemoryMatcher) deleteRule(ruleID string) error {
 	if forestIndex != nil {
 		forestIndex.RemoveRule(rule)
 	}
-	
+
 	// Remove from tenant-specific tracking
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 	if m.tenantRules[key] != nil {
@@ -510,26 +510,25 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 
 	// Get candidate rules from appropriate forest index
 	forestIndex := m.getForestIndex(query.TenantID, query.ApplicationID)
-	var candidates []*Rule
-	
+	var candidates []RuleWithWeight
+
 	if forestIndex != nil {
 		candidates = forestIndex.FindCandidateRules(query)
 	} else {
 		// If no specific tenant forest, return empty results
-		candidates = []*Rule{}
+		candidates = []RuleWithWeight{}
 	}
 
 	var matches []*MatchResult
 
 	// Validate each candidate
 	for _, rule := range candidates {
-		if m.isFullMatch(rule, query) {
-			weight := rule.CalculateTotalWeight()
-			matchedDims := m.countMatchedDimensions(rule, query)
+		if m.isFullMatch(rule.Rule, query) {
+			matchedDims := m.countMatchedDimensions(rule.Rule, query)
 
 			matches = append(matches, &MatchResult{
-				Rule:        rule,
-				TotalWeight: weight,
+				Rule:        rule.Rule,
+				TotalWeight: rule.Weight,
 				MatchedDims: matchedDims,
 			})
 		}
@@ -895,7 +894,7 @@ func (m *InMemoryMatcher) Rebuild() error {
 	// Initialize dimensions in appropriate forests
 	for _, config := range configs {
 		newDimensionConfigs[config.Name] = config
-		
+
 		// Get or create forest for this tenant/application
 		key := m.getTenantKey(config.TenantID, config.ApplicationID)
 		if newForestIndexes[key] == nil {
@@ -918,14 +917,14 @@ func (m *InMemoryMatcher) Rebuild() error {
 			return fmt.Errorf("invalid rule during rebuild (ID: %s): %w", rule.ID, err)
 		}
 		newRules[rule.ID] = rule
-		
+
 		// Add to tenant tracking
 		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 		if newTenantRules[key] == nil {
 			newTenantRules[key] = make(map[string]*Rule)
 		}
 		newTenantRules[key][rule.ID] = rule
-		
+
 		// Get or create forest for this tenant/application
 		if newForestIndexes[key] == nil {
 			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID)

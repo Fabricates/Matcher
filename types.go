@@ -69,6 +69,12 @@ type Rule struct {
 	Metadata      map[string]string `json:"metadata,omitempty"` // Additional metadata
 }
 
+// RuleWithWeight can be used as search candidates
+type RuleWithWeight struct{
+	*Rule
+	Weight float64
+}
+
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
 	TenantID        string            `json:"tenant_id,omitempty"`        // Tenant identifier for scoped queries
