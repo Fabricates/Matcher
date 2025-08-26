@@ -300,26 +300,20 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []*Rule 
 	rf.mu.RLock()
 	defer rf.mu.RUnlock()
 
-	candidateRules := make(map[string]*Rule)
+	candidateRules := make([]*Rule, 0)
 
 	if len(rf.DimensionOrder) == 0 {
-		return []*Rule{}
+		return candidateRules
 	}
 
 	// Process each tree type to find matching rules
 	for matchType, trees := range rf.Trees {
 		for _, tree := range trees {
-			rf.searchTree(tree, query, 0, matchType, candidateRules)
+			rf.searchTree(tree, query, 0, matchType, &candidateRules)
 		}
 	}
 
-	// Convert map to slice
-	result := make([]*Rule, 0, len(candidateRules))
-	for _, rule := range candidateRules {
-		result = append(result, rule)
-	}
-
-	return result
+	return candidateRules
 }
 
 // FindCandidateRules finds rules that could match the query (map interface for compatibility)
@@ -345,8 +339,8 @@ func (rf *RuleForest) FindCandidateRules(queryValues interface{}) []*Rule {
 	}
 }
 
-// searchTree searches a single tree for matching rules (simplified for fixed dimensions)
-func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules map[string]*Rule) {
+// searchTree searches a single tree for matching rules (optimized with slice and status filtering)
+func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules *[]*Rule) {
 	if node == nil {
 		return
 	}
@@ -393,9 +387,16 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 	// Collect rules from this node (since rules can terminate at any depth)
 	node.mu.RLock()
 	for _, rule := range node.Rules {
+		// Filter by rule status unless IncludeAllRules is true (only collect 'working' rules)
+		// Consider empty status as working (for backward compatibility)
+		if !query.IncludeAllRules && rule.Status != RuleStatusWorking && rule.Status != "" {
+			continue
+		}
+		
 		// For partial queries, check if all specified query dimensions match the rule
 		if rf.ruleMatchesPartialQuery(rule, query) {
-			candidateRules[rule.ID] = rule
+			// Insert rule in weight-ordered position (highest weight at front)
+			rf.insertRuleByWeight(candidateRules, rule)
 		}
 	}
 	node.mu.RUnlock()
@@ -418,6 +419,44 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 		}
 	}
 	node.mu.RUnlock()
+}
+
+// insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
+func (rf *RuleForest) insertRuleByWeight(candidateRules *[]*Rule, newRule *Rule) {
+	newWeight := newRule.CalculateTotalWeight()
+	
+	// If slice is empty or new rule has highest weight, insert at front
+	if len(*candidateRules) == 0 {
+		*candidateRules = append(*candidateRules, newRule)
+		return
+	}
+	
+	firstWeight := (*candidateRules)[0].CalculateTotalWeight()
+	if newWeight > firstWeight {
+		// Insert at front
+		*candidateRules = append([]*Rule{newRule}, *candidateRules...)
+		return
+	}
+	
+	// Find the right position to maintain weight order
+	insertPos := len(*candidateRules)
+	for i, rule := range *candidateRules {
+		if newWeight > rule.CalculateTotalWeight() {
+			insertPos = i
+			break
+		}
+	}
+	
+	// Insert at the found position
+	if insertPos == len(*candidateRules) {
+		// Append at end
+		*candidateRules = append(*candidateRules, newRule)
+	} else {
+		// Insert in middle
+		*candidateRules = append(*candidateRules, nil)
+		copy((*candidateRules)[insertPos+1:], (*candidateRules)[insertPos:])
+		(*candidateRules)[insertPos] = newRule
+	}
 }
 
 // ruleMatchesPartialQuery checks if a rule matches all dimensions specified in a partial query

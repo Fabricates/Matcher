@@ -523,11 +523,6 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 
 	// Validate each candidate
 	for _, rule := range candidates {
-		// Filter by rule status unless IncludeAllRules is true
-		if !query.IncludeAllRules && rule.Status != RuleStatusWorking {
-			continue
-		}
-		
 		if m.isFullMatch(rule, query) {
 			weight := rule.CalculateTotalWeight()
 			matchedDims := m.countMatchedDimensions(rule, query)
