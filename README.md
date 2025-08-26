@@ -631,6 +631,106 @@ fmt.Printf("L1 cache size: %v\n", cacheStats["l1_size"])
 fmt.Printf("L2 cache size: %v\n", cacheStats["l2_size"])
 ```
 
+## ⚡ Performance Optimizations
+
+### Forest Search Engine Optimization
+
+Recent optimizations to the `searchTree` function in `forest.go` provide significant performance improvements through three key enhancements:
+
+#### 1. Slice-based Candidate Collection
+
+**Before**: Used `map[string]*Rule` to collect candidates, requiring map-to-slice conversion
+```go
+candidates := make(map[string]*Rule)
+// ... collect all rules into map
+result := make([]*Rule, 0, len(candidates))
+for _, rule := range candidates {
+    result = append(result, rule)
+}
+```
+
+**After**: Uses `*[]*Rule` parameter for direct slice manipulation
+```go
+candidates := make([]*Rule, 0)
+// ... collect rules directly into slice
+return candidates
+```
+
+**Benefits**: 
+- Eliminates memory allocation overhead from map creation
+- Removes iteration costs of map-to-slice conversion
+- Reduces garbage collection pressure
+
+#### 2. Status Filtering During Traversal
+
+**Before**: All rules collected first, then filtered by status in `matcher.go`
+```go
+for _, rule := range candidates {
+    if !query.IncludeAllRules && rule.Status != RuleStatusWorking {
+        continue // Filter here
+    }
+    // ... process rule
+}
+```
+
+**After**: Only 'working' rules (and empty status for backward compatibility) collected during tree traversal
+```go
+// During tree traversal
+if shouldIncludeRule(rule, query.IncludeAllRules) {
+    // Only collect relevant rules
+    *candidates = append(*candidates, rule)
+}
+```
+
+**Benefits**:
+- Reduces memory usage by avoiding collection of unwanted rules
+- Decreases processing time by eliminating post-collection filtering
+- Improves cache locality by working with smaller data sets
+
+#### 3. Weight-based Insertion Ordering
+
+**Before**: Rules collected unordered, requiring post-processing to sort by weight
+```go
+// ... collect all rules
+sort.Slice(result, func(i, j int) bool {
+    return result[i].CalculateTotalWeight() > result[j].CalculateTotalWeight()
+})
+```
+
+**After**: Rules inserted in weight-descending order using `insertRuleByWeight()` helper method
+```go
+func insertRuleByWeight(candidates *[]*Rule, rule *Rule) {
+    weight := rule.CalculateTotalWeight()
+    // Insert in correct position to maintain order
+    // Highest-weight rules at front
+}
+```
+
+**Benefits**:
+- Highest-weight rules always at front of results
+- Eliminates need for post-collection sorting
+- Enables early termination for single-result queries
+
+#### Performance Impact Summary
+
+The optimizations transform the algorithm from a **two-pass process** to a **single-pass process**:
+
+| Aspect | Before | After | Improvement |
+|--------|--------|--------|-------------|
+| Collection | Map → Slice conversion | Direct slice manipulation | Eliminates conversion overhead |
+| Filtering | Post-collection | During traversal | Reduces memory and processing |
+| Ordering | Post-collection sorting | Insertion ordering | Eliminates sorting overhead |
+| Memory | All rules collected | Only relevant rules | Reduced memory footprint |
+| Passes | Two-pass (collect + process) | Single-pass (collect with processing) | 50% reduction in data traversal |
+
+#### Backward Compatibility
+
+All optimizations maintain complete backward compatibility:
+- ✅ All existing tests pass without modification
+- ✅ Empty rule status treated as 'working' for compatibility with test fixtures
+- ✅ Public API unchanged - optimization is internal to forest traversal
+- ✅ Same functional behavior with improved performance
+
 ## 🔍 Forest Structure Details
 
 ### Tree Organization

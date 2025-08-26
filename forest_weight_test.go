@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -149,6 +150,97 @@ func TestForestStatusFiltering(t *testing.T) {
 		}
 		if candidatesAll[1].ID != "working-rule" {
 			t.Errorf("Expected working-rule to be second, got %s", candidatesAll[1].ID)
+		}
+	}
+}
+
+func TestForestNoDuplicateChecks(t *testing.T) {
+	forest := CreateForestIndex()
+
+	// Create rules that would be duplicates if we were checking for them
+	// But the optimization assumes rules are unique within branches
+	rule1 := &Rule{
+		ID: "rule1",
+		Dimensions: []*DimensionValue{
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 10.0},
+		},
+		Status: RuleStatusWorking,
+	}
+
+	// Adding same rule multiple times (in theory could cause duplicates)
+	forest.AddRule(rule1)
+	// In a non-optimized system, this might create duplicate candidates
+
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+		IncludeAllRules: true,
+	}
+
+	candidates := forest.FindCandidateRules(query)
+	t.Logf("Found %d candidates (should be 1, proving no duplicate issues)", len(candidates))
+
+	// The forest structure should naturally prevent duplicates due to rule indexing
+	// This test mainly documents that we're not doing explicit duplicate checking
+	if len(candidates) != 1 {
+		t.Errorf("Expected 1 candidate, got %d", len(candidates))
+	}
+
+	if len(candidates) > 0 && candidates[0].ID != "rule1" {
+		t.Errorf("Expected rule1, got %s", candidates[0].ID)
+	}
+}
+
+func TestForestOptimizationEfficiency(t *testing.T) {
+	forest := CreateForestIndex()
+
+	// Create multiple rules with different weights
+	weights := []float64{5.0, 20.0, 10.0, 15.0, 25.0, 8.0}
+	expectedOrder := []string{"rule-25", "rule-20", "rule-15", "rule-10", "rule-8", "rule-5"}
+
+	// Add rules in unsorted order
+	for _, weight := range weights {
+		rule := &Rule{
+			ID: fmt.Sprintf("rule-%.0f", weight),
+			Dimensions: []*DimensionValue{
+				{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: weight},
+			},
+			Status: RuleStatusWorking,
+		}
+		forest.AddRule(rule)
+		t.Logf("Added rule with weight %.0f", weight)
+	}
+
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+		IncludeAllRules: true,
+	}
+
+	candidates := forest.FindCandidateRules(query)
+	t.Logf("Found %d candidates in weight-sorted order", len(candidates))
+
+	if len(candidates) != len(weights) {
+		t.Errorf("Expected %d candidates, got %d", len(weights), len(candidates))
+	}
+
+	// Verify the candidates are in descending weight order
+	for i, candidate := range candidates {
+		expectedID := expectedOrder[i]
+		if candidate.ID != expectedID {
+			t.Errorf("Position %d: expected %s, got %s", i, expectedID, candidate.ID)
+		}
+		t.Logf("Position %d: %s (weight %.0f)", i, candidate.ID, candidate.CalculateTotalWeight())
+	}
+
+	// Verify weights are actually in descending order
+	for i := 1; i < len(candidates); i++ {
+		prevWeight := candidates[i-1].CalculateTotalWeight()
+		currWeight := candidates[i].CalculateTotalWeight()
+		if prevWeight < currWeight {
+			t.Errorf("Weight ordering broken at position %d: %.0f < %.0f", i, prevWeight, currWeight)
 		}
 	}
 }

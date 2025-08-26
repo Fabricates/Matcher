@@ -33,3 +33,5 @@ go.work.sum
 
 # Test output files
 test_output.txt
+
+test_*/

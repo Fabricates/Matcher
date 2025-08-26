@@ -170,7 +170,7 @@ func TestFindBestMatchWithStatus(t *testing.T) {
 func TestQueryRuleIncludeAllRulesField(t *testing.T) {
 	// Test that QueryRule can be manually constructed with IncludeAllRules field
 	query1 := &QueryRule{
-		Values: map[string]string{"product": "ProductD"},
+		// Values: map[string]string{"product": "ProductD"},
 		IncludeAllRules: false,
 	}
 	if query1.IncludeAllRules != false {
@@ -178,7 +178,7 @@ func TestQueryRuleIncludeAllRulesField(t *testing.T) {
 	}
 
 	query2 := &QueryRule{
-		Values: map[string]string{"product": "ProductD"},
+		// Values: map[string]string{"product": "ProductD"},
 		IncludeAllRules: true,
 	}
 	if query2.IncludeAllRules != true {
