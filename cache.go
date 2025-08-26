@@ -56,6 +56,13 @@ func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
 		}
 		keyString += key
 	}
+	
+	// Include IncludeAllRules flag in the key to distinguish cache entries
+	if query.IncludeAllRules {
+		keyString += "|include_all:true"
+	} else {
+		keyString += "|include_all:false"
+	}
 
 	// Generate MD5 hash for consistent key length
 	hash := md5.Sum([]byte(keyString))

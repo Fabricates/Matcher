@@ -397,6 +397,45 @@ invalidRule := matcher.NewRule("invalid").
     Build() // ❌ Invalid - unknown_dim not in configuration
 ```
 
+### Rule Status Management
+
+Rules support status management to differentiate between working (production) rules and draft rules:
+
+```go
+// Create a working rule (default status)
+workingRule := matcher.NewRule("prod-rule").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
+    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Build() // Status defaults to RuleStatusWorking
+
+// Create a draft rule explicitly
+draftRule := matcher.NewRule("draft-rule").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual, 20.0).
+    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Status(matcher.RuleStatusDraft).
+    Build()
+
+// Default queries only find working rules
+workingQuery := matcher.CreateQuery(map[string]string{
+    "product": "ProductA",
+    "environment": "prod",
+})
+results, _ := engine.FindAllMatches(workingQuery) // Only finds working rules
+
+// Query all rules (including drafts)
+allQuery := matcher.CreateQueryWithAllRules(map[string]string{
+    "product": "ProductA", 
+    "environment": "prod",
+})
+allResults, _ := engine.FindAllMatches(allQuery) // Finds both working and draft rules
+```
+
+**Behavior**:
+- **Default queries**: Only search working rules (`RuleStatusWorking`)
+- **All-rules queries**: Search both working and draft rules (`RuleStatusDraft`)
+- **Rule status**: Defaults to `RuleStatusWorking` if not explicitly set
+- **Best match**: Respects status filtering (may return lower-weight working rule instead of higher-weight draft rule)
+
 ### Event-Driven Updates
 
 ```go

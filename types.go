@@ -15,6 +15,14 @@ const (
 	MatchTypeSuffix
 )
 
+// RuleStatus defines the status of a rule
+type RuleStatus string
+
+const (
+	RuleStatusWorking RuleStatus = "working"
+	RuleStatusDraft   RuleStatus = "draft"
+)
+
 func (mt MatchType) String() string {
 	switch mt {
 	case MatchTypeEqual:
@@ -51,6 +59,7 @@ type Rule struct {
 	ID           string            `json:"id"`
 	Dimensions   []*DimensionValue `json:"dimensions"`
 	ManualWeight *float64          `json:"manual_weight,omitempty"` // Optional manual weight override
+	Status       RuleStatus        `json:"status"`                  // Status of the rule (working, draft, etc.)
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
 	Metadata     map[string]string `json:"metadata,omitempty"` // Additional metadata
@@ -58,7 +67,8 @@ type Rule struct {
 
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
-	Values map[string]string `json:"values"` // dimension_name -> value
+	Values         map[string]string `json:"values"`           // dimension_name -> value
+	IncludeAllRules bool             `json:"include_all_rules"` // When true, includes draft rules in search; defaults to false (working rules only)
 }
 
 // MatchResult represents the result of a rule matching operation
