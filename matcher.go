@@ -490,12 +490,7 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 		return nil, nil
 	}
 
-	// Sort by weight (highest first)
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].TotalWeight > matches[j].TotalWeight
-	})
-
-	best := matches[0]
+	best := matches[0] // already sorted
 
 	// Cache the result
 	m.cache.Set(query, best)
