@@ -29,6 +29,7 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 
 ### Enterprise-Ready
 
+- **Multi-Tenant Support**: Complete tenant and application isolation with separate rule forests
 - **Pluggable Persistence**: JSON, Database, or custom storage backends
 - **Event-Driven Updates**: Kafka/messaging queue integration for distributed rule updates
 - **Health Monitoring**: Comprehensive statistics and health checks
@@ -476,6 +477,58 @@ func (p *MyPersistence) SaveDimensions(ctx context.Context, dims []*matcher.Dime
 // Use custom persistence
 engine, err := matcher.CreateMatcherEngine(&MyPersistence{}, nil, "node-1")
 ```
+
+## 🏢 Multi-Tenant Support
+
+The engine supports complete tenant and application isolation, enabling secure multi-tenant deployments with excellent performance.
+
+### Tenant-Scoped Rules
+
+```go
+// Create rules for different tenants
+tenant1Rule := matcher.NewRuleWithTenant("rule1", "tenant1", "app1").
+    Dimension("service", "auth", matcher.MatchTypeEqual, 10.0).
+    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Build()
+
+tenant2Rule := matcher.NewRuleWithTenant("rule2", "tenant2", "app1").
+    Dimension("service", "auth", matcher.MatchTypeEqual, 15.0).
+    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Build()
+
+engine.AddRule(tenant1Rule)
+engine.AddRule(tenant2Rule)
+```
+
+### Tenant-Scoped Queries
+
+```go
+// Query for tenant1 - only finds tenant1's rules
+query1 := matcher.CreateQueryWithTenant("tenant1", "app1", map[string]string{
+    "service": "auth",
+    "environment": "prod",
+})
+
+result1, err := engine.FindBestMatch(query1) // Returns tenant1Rule
+
+// Query for tenant2 - only finds tenant2's rules  
+query2 := matcher.CreateQueryWithTenant("tenant2", "app1", map[string]string{
+    "service": "auth", 
+    "environment": "prod",
+})
+
+result2, err := engine.FindBestMatch(query2) // Returns tenant2Rule
+```
+
+### Key Benefits
+
+- **Complete Isolation**: Tenants cannot access each other's rules or data
+- **Performance**: Each tenant gets its own optimized rule forest
+- **Cache Isolation**: Query cache includes tenant context to prevent data leakage
+- **Weight Conflicts**: Checked only within the same tenant/application scope
+- **Backward Compatibility**: Existing code continues to work unchanged
+
+See [MULTI_TENANT.md](MULTI_TENANT.md) for comprehensive documentation, migration guide, and best practices.
 
 ## 📊 Performance & Statistics
 

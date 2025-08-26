@@ -57,6 +57,24 @@ func (jp *JSONPersistence) SaveRules(ctx context.Context, rules []*Rule) error {
 	return nil
 }
 
+// LoadRulesByTenant loads rules for a specific tenant and application
+func (jp *JSONPersistence) LoadRulesByTenant(ctx context.Context, tenantID, applicationID string) ([]*Rule, error) {
+	// Load all rules and filter by tenant/application
+	allRules, err := jp.LoadRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	var filteredRules []*Rule
+	for _, rule := range allRules {
+		if rule.MatchesTenantContext(tenantID, applicationID) {
+			filteredRules = append(filteredRules, rule)
+		}
+	}
+	
+	return filteredRules, nil
+}
+
 // LoadDimensionConfigs loads dimension configurations from JSON file
 func (jp *JSONPersistence) LoadDimensionConfigs(ctx context.Context) ([]*DimensionConfig, error) {
 	data, err := os.ReadFile(jp.dimensionsPath)
@@ -88,6 +106,26 @@ func (jp *JSONPersistence) SaveDimensionConfigs(ctx context.Context, configs []*
 	}
 
 	return nil
+}
+
+// LoadDimensionConfigsByTenant loads dimension configurations for a specific tenant and application
+func (jp *JSONPersistence) LoadDimensionConfigsByTenant(ctx context.Context, tenantID, applicationID string) ([]*DimensionConfig, error) {
+	// Load all dimension configs and filter by tenant/application
+	allConfigs, err := jp.LoadDimensionConfigs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	var filteredConfigs []*DimensionConfig
+	for _, config := range allConfigs {
+		// Match tenant context or include global configs (empty tenant/app)
+		if (config.TenantID == "" && config.ApplicationID == "") || 
+		   (config.TenantID == tenantID && config.ApplicationID == applicationID) {
+			filteredConfigs = append(filteredConfigs, config)
+		}
+	}
+	
+	return filteredConfigs, nil
 }
 
 // Health checks if the persistence layer is healthy
@@ -306,6 +344,31 @@ func (dp *DatabasePersistence) LoadDimensionConfigs(ctx context.Context) ([]*Dim
 func (dp *DatabasePersistence) SaveDimensionConfigs(ctx context.Context, configs []*DimensionConfig) error {
 	// Placeholder implementation
 	return nil
+}
+
+// LoadRulesByTenant loads rules for a specific tenant and application from the database
+func (dp *DatabasePersistence) LoadRulesByTenant(ctx context.Context, tenantID, applicationID string) ([]*Rule, error) {
+	// Placeholder implementation
+	// In a real implementation, you would:
+	// 1. Connect to the database
+	// 2. Execute a SELECT query with WHERE clause for tenant_id and application_id
+	// 3. Scan the results into Rule structs
+	// 4. Return the filtered rules
+
+	return []*Rule{}, nil
+}
+
+// LoadDimensionConfigsByTenant loads dimension configurations for a specific tenant and application from the database
+func (dp *DatabasePersistence) LoadDimensionConfigsByTenant(ctx context.Context, tenantID, applicationID string) ([]*DimensionConfig, error) {
+	// Placeholder implementation
+	// In a real implementation, you would:
+	// 1. Connect to the database
+	// 2. Execute a SELECT query with WHERE clause for tenant_id and application_id
+	// 3. Include global configs (empty tenant_id and application_id)
+	// 4. Scan the results into DimensionConfig structs
+	// 5. Return the filtered configs
+
+	return []*DimensionConfig{}, nil
 }
 
 // Health checks if the database connection is healthy

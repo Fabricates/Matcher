@@ -55,6 +55,31 @@ func NewRule(id string) *RuleBuilder {
 	}
 }
 
+// NewRuleWithTenant creates a new rule builder for a specific tenant and application
+func NewRuleWithTenant(id, tenantID, applicationID string) *RuleBuilder {
+	return &RuleBuilder{
+		rule: &Rule{
+			ID:            id,
+			TenantID:      tenantID,
+			ApplicationID: applicationID,
+			Dimensions:    make([]*DimensionValue, 0),
+			Metadata:      make(map[string]string),
+		},
+	}
+}
+
+// Tenant sets the tenant ID for the rule
+func (rb *RuleBuilder) Tenant(tenantID string) *RuleBuilder {
+	rb.rule.TenantID = tenantID
+	return rb
+}
+
+// Application sets the application ID for the rule
+func (rb *RuleBuilder) Application(applicationID string) *RuleBuilder {
+	rb.rule.ApplicationID = applicationID
+	return rb
+}
+
 // Dimension adds a dimension to the rule being built
 func (rb *RuleBuilder) Dimension(name, value string, matchType MatchType, weight float64) *RuleBuilder {
 	dimValue := &DimensionValue{
@@ -246,7 +271,17 @@ func (me *MatcherEngine) AddAnyRule(id string, dimensionNames []string, manualWe
 // CreateQuery creates a query from a map of dimension values
 func CreateQuery(values map[string]string) *QueryRule {
 	return &QueryRule{
-		Values:         values,
+		Values:          values,
+		IncludeAllRules: false, // Default to working rules only
+	}
+}
+
+// CreateQueryWithTenant creates a query for a specific tenant and application
+func CreateQueryWithTenant(tenantID, applicationID string, values map[string]string) *QueryRule {
+	return &QueryRule{
+		TenantID:        tenantID,
+		ApplicationID:   applicationID,
+		Values:          values,
 		IncludeAllRules: false, // Default to working rules only
 	}
 }
@@ -254,14 +289,37 @@ func CreateQuery(values map[string]string) *QueryRule {
 // CreateQueryWithAllRules creates a query that includes all rules (working and draft)
 func CreateQueryWithAllRules(values map[string]string) *QueryRule {
 	return &QueryRule{
-		Values:         values,
+		Values:          values,
+		IncludeAllRules: true,
+	}
+}
+
+// CreateQueryWithAllRulesAndTenant creates a tenant-scoped query that includes all rules
+func CreateQueryWithAllRulesAndTenant(tenantID, applicationID string, values map[string]string) *QueryRule {
+	return &QueryRule{
+		TenantID:        tenantID,
+		ApplicationID:   applicationID,
+		Values:          values,
 		IncludeAllRules: true,
 	}
 }
 
 // GetForestStats returns detailed forest index statistics
 func (me *MatcherEngine) GetForestStats() map[string]interface{} {
-	return me.matcher.forestIndex.GetStats()
+	me.matcher.mu.RLock()
+	defer me.matcher.mu.RUnlock()
+	
+	stats := make(map[string]interface{})
+	
+	for key, forestIndex := range me.matcher.forestIndexes {
+		stats[key] = forestIndex.GetStats()
+	}
+	
+	// Add summary stats
+	stats["total_forests"] = len(me.matcher.forestIndexes)
+	stats["total_rules"] = len(me.matcher.rules)
+	
+	return stats
 }
 
 // ClearCache clears the query cache
@@ -281,37 +339,8 @@ func (me *MatcherEngine) ValidateRule(rule *Rule) error {
 
 // RebuildIndex rebuilds the forest index (useful after bulk operations)
 func (me *MatcherEngine) RebuildIndex() error {
-	// Get all rules
-	rules, err := me.ListRules(0, 10000) // Assuming max 10k rules
-	if err != nil {
-		return fmt.Errorf("failed to get rules: %w", err)
-	}
-
-	// Create forest index
-	forestIndex := CreateForestIndex()
-
-	// Initialize dimensions
-	dimensions, err := me.ListDimensions()
-	if err != nil {
-		return fmt.Errorf("failed to get dimensions: %w", err)
-	}
-
-	for _, dim := range dimensions {
-		forestIndex.InitializeDimension(dim.Name)
-	}
-
-	// Add all rules to index
-	for _, rule := range rules {
-		forestIndex.AddRule(rule)
-	}
-
-	// Replace the old index
-	me.matcher.mu.Lock()
-	me.matcher.forestIndex = forestIndex
-	me.matcher.cache.Clear() // Clear cache since index changed
-	me.matcher.mu.Unlock()
-
-	return nil
+	// Use the existing Rebuild method which is already tenant-aware
+	return me.matcher.Rebuild()
 }
 
 // generateDefaultNodeID generates a default node ID based on hostname and random suffix
