@@ -700,6 +700,10 @@ go run ./cmd/performance_benchmark/main.go
 cd example
 go run main.go
 
+# Multi-tenant demo
+cd example/multitenant_demo
+go run main.go
+
 # Forest structure demo  
 cd example/forest_demo
 go run main.go
