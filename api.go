@@ -79,6 +79,12 @@ func (rb *RuleBuilder) Metadata(key, value string) *RuleBuilder {
 	return rb
 }
 
+// Status sets the status of the rule
+func (rb *RuleBuilder) Status(status RuleStatus) *RuleBuilder {
+	rb.rule.Status = status
+	return rb
+}
+
 // Build returns the constructed rule
 func (rb *RuleBuilder) Build() *Rule {
 	now := time.Now()
@@ -86,6 +92,12 @@ func (rb *RuleBuilder) Build() *Rule {
 		rb.rule.CreatedAt = now
 	}
 	rb.rule.UpdatedAt = now
+	
+	// Set default status if not specified
+	if rb.rule.Status == "" {
+		rb.rule.Status = RuleStatusWorking
+	}
+	
 	return rb.rule
 }
 
@@ -234,7 +246,16 @@ func (me *MatcherEngine) AddAnyRule(id string, dimensionNames []string, manualWe
 // CreateQuery creates a query from a map of dimension values
 func CreateQuery(values map[string]string) *QueryRule {
 	return &QueryRule{
-		Values: values,
+		Values:         values,
+		IncludeAllRules: false, // Default to working rules only
+	}
+}
+
+// CreateQueryWithAllRules creates a query that includes all rules (working and draft)
+func CreateQueryWithAllRules(values map[string]string) *QueryRule {
+	return &QueryRule{
+		Values:         values,
+		IncludeAllRules: true,
 	}
 }
 
