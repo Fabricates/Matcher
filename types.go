@@ -40,10 +40,12 @@ func (mt MatchType) String() string {
 
 // DimensionConfig defines the configuration for a dimension
 type DimensionConfig struct {
-	Name     string  `json:"name"`
-	Index    int     `json:"index"`    // Order of this dimension
-	Required bool    `json:"required"` // Whether this dimension is required for matching
-	Weight   float64 `json:"weight"`   // Default weight for this dimension
+	Name          string  `json:"name"`
+	Index         int     `json:"index"`         // Order of this dimension
+	Required      bool    `json:"required"`      // Whether this dimension is required for matching
+	Weight        float64 `json:"weight"`        // Default weight for this dimension
+	TenantID      string  `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
+	ApplicationID string  `json:"application_id,omitempty"` // Application identifier for multi-application support
 }
 
 // DimensionValue represents a value for a specific dimension in a rule
@@ -56,19 +58,23 @@ type DimensionValue struct {
 
 // Rule represents a matching rule with dynamic dimensions
 type Rule struct {
-	ID           string            `json:"id"`
-	Dimensions   []*DimensionValue `json:"dimensions"`
-	ManualWeight *float64          `json:"manual_weight,omitempty"` // Optional manual weight override
-	Status       RuleStatus        `json:"status"`                  // Status of the rule (working, draft, etc.)
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
-	Metadata     map[string]string `json:"metadata,omitempty"` // Additional metadata
+	ID            string            `json:"id"`
+	TenantID      string            `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
+	ApplicationID string            `json:"application_id,omitempty"` // Application identifier for multi-application support
+	Dimensions    []*DimensionValue `json:"dimensions"`
+	ManualWeight  *float64          `json:"manual_weight,omitempty"` // Optional manual weight override
+	Status        RuleStatus        `json:"status"`                  // Status of the rule (working, draft, etc.)
+	CreatedAt     time.Time         `json:"created_at"`
+	UpdatedAt     time.Time         `json:"updated_at"`
+	Metadata      map[string]string `json:"metadata,omitempty"` // Additional metadata
 }
 
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
-	Values         map[string]string `json:"values"`           // dimension_name -> value
-	IncludeAllRules bool             `json:"include_all_rules"` // When true, includes draft rules in search; defaults to false (working rules only)
+	TenantID        string            `json:"tenant_id,omitempty"`        // Tenant identifier for scoped queries
+	ApplicationID   string            `json:"application_id,omitempty"`   // Application identifier for scoped queries
+	Values          map[string]string `json:"values"`                     // dimension_name -> value
+	IncludeAllRules bool              `json:"include_all_rules"`          // When true, includes draft rules in search; defaults to false (working rules only)
 }
 
 // MatchResult represents the result of a rule matching operation
@@ -82,10 +88,12 @@ type MatchResult struct {
 type PersistenceInterface interface {
 	// Rules operations
 	LoadRules(ctx context.Context) ([]*Rule, error)
+	LoadRulesByTenant(ctx context.Context, tenantID, applicationID string) ([]*Rule, error)
 	SaveRules(ctx context.Context, rules []*Rule) error
 
 	// Dimensions operations
 	LoadDimensionConfigs(ctx context.Context) ([]*DimensionConfig, error)
+	LoadDimensionConfigsByTenant(ctx context.Context, tenantID, applicationID string) ([]*DimensionConfig, error)
 	SaveDimensionConfigs(ctx context.Context, configs []*DimensionConfig) error
 
 	// Health check
@@ -173,4 +181,20 @@ func (r *Rule) CalculateTotalWeight() float64 {
 // HasDimension checks if the rule has a specific dimension
 func (r *Rule) HasDimension(dimensionName string) bool {
 	return r.GetDimensionValue(dimensionName) != nil
+}
+
+// GetTenantContext returns the tenant and application context for the rule
+func (r *Rule) GetTenantContext() (tenantID, applicationID string) {
+	return r.TenantID, r.ApplicationID
+}
+
+// MatchesTenantContext checks if the rule matches the given tenant and application context
+func (r *Rule) MatchesTenantContext(tenantID, applicationID string) bool {
+	// Both rule and query must have the same tenant/application context
+	return r.TenantID == tenantID && r.ApplicationID == applicationID
+}
+
+// GetTenantContext returns the tenant and application context for the query
+func (q *QueryRule) GetTenantContext() (tenantID, applicationID string) {
+	return q.TenantID, q.ApplicationID
 }

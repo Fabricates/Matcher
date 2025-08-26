@@ -660,7 +660,9 @@ func TestRebuild(t *testing.T) {
 
 	// Add directly to internal structures without persistence (simulate corrupted state)
 	engine.rules["temp_rule_not_persisted"] = tempRule
-	engine.forestIndex.AddRule(tempRule)
+	// Add to appropriate forest (default tenant/app since tempRule has empty tenant context)
+	forestIndex := engine.getOrCreateForestIndex(tempRule.TenantID, tempRule.ApplicationID)
+	forestIndex.AddRule(tempRule)
 	engine.stats.TotalRules = len(engine.rules)
 
 	// Verify temp rule exists in memory

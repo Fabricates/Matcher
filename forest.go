@@ -26,9 +26,11 @@ type MatchBranch struct {
 
 // RuleForest represents the forest structure with shared nodes
 type RuleForest struct {
-	Trees          map[MatchType][]*SharedNode `json:"trees"`           // Trees organized by first dimension match type
-	DimensionOrder []string                    `json:"dimension_order"` // Order of dimensions for tree traversal
-	RuleIndex      map[string][]*SharedNode    `json:"rule_index"`      // Index of rules to their nodes for quick removal
+	TenantID       string                      `json:"tenant_id,omitempty"`       // Tenant identifier for this forest
+	ApplicationID  string                      `json:"application_id,omitempty"`  // Application identifier for this forest
+	Trees          map[MatchType][]*SharedNode `json:"trees"`                     // Trees organized by first dimension match type
+	DimensionOrder []string                    `json:"dimension_order"`           // Order of dimensions for tree traversal
+	RuleIndex      map[string][]*SharedNode    `json:"rule_index"`                // Index of rules to their nodes for quick removal
 	mu             sync.RWMutex
 }
 
@@ -95,6 +97,17 @@ func (sn *SharedNode) RemoveRule(ruleID string) bool {
 // CreateRuleForest creates a rule forest with the structure
 func CreateRuleForest() *RuleForest {
 	return &RuleForest{
+		Trees:          make(map[MatchType][]*SharedNode),
+		DimensionOrder: []string{},
+		RuleIndex:      make(map[string][]*SharedNode),
+	}
+}
+
+// CreateRuleForestWithTenant creates a rule forest for a specific tenant and application
+func CreateRuleForestWithTenant(tenantID, applicationID string) *RuleForest {
+	return &RuleForest{
+		TenantID:       tenantID,
+		ApplicationID:  applicationID,
 		Trees:          make(map[MatchType][]*SharedNode),
 		DimensionOrder: []string{},
 		RuleIndex:      make(map[string][]*SharedNode),

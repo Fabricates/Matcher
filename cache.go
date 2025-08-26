@@ -63,6 +63,9 @@ func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
 	} else {
 		keyString += "|include_all:false"
 	}
+	
+	// Include tenant and application context to ensure isolation
+	keyString += fmt.Sprintf("|tenant:%s|app:%s", query.TenantID, query.ApplicationID)
 
 	// Generate MD5 hash for consistent key length
 	hash := md5.Sum([]byte(keyString))
