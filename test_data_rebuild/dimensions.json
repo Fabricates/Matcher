@@ -1,17 +1,5 @@
 [
   {
-    "name": "tool",
-    "index": 2,
-    "required": false,
-    "weight": 8
-  },
-  {
-    "name": "tool_id",
-    "index": 3,
-    "required": false,
-    "weight": 3
-  },
-  {
     "name": "recipe",
     "index": 4,
     "required": false,
@@ -28,5 +16,17 @@
     "index": 1,
     "required": false,
     "weight": 5
+  },
+  {
+    "name": "tool",
+    "index": 2,
+    "required": false,
+    "weight": 8
+  },
+  {
+    "name": "tool_id",
+    "index": 3,
+    "required": false,
+    "weight": 3
   }
 ]

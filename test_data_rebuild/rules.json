@@ -1,25 +1,5 @@
 [
   {
-    "id": "rebuild_test_2",
-    "dimensions": [
-      {
-        "dimension_name": "product",
-        "value": "Product2",
-        "match_type": 0,
-        "weight": 10
-      },
-      {
-        "dimension_name": "tool",
-        "value": "Tool2",
-        "match_type": 0,
-        "weight": 8
-      }
-    ],
-    "status": "working",
-    "created_at": "2025-08-26T02:44:02.65512387Z",
-    "updated_at": "2025-08-26T02:44:02.655127056Z"
-  },
-  {
     "id": "rebuild_test_1",
     "dimensions": [
       {
@@ -36,7 +16,27 @@
       }
     ],
     "status": "working",
-    "created_at": "2025-08-26T02:44:02.655123459Z",
-    "updated_at": "2025-08-26T02:44:02.655125112Z"
+    "created_at": "2025-08-26T03:59:44.899365238Z",
+    "updated_at": "2025-08-26T03:59:44.899366771Z"
+  },
+  {
+    "id": "rebuild_test_2",
+    "dimensions": [
+      {
+        "dimension_name": "product",
+        "value": "Product2",
+        "match_type": 0,
+        "weight": 10
+      },
+      {
+        "dimension_name": "tool",
+        "value": "Tool2",
+        "match_type": 0,
+        "weight": 8
+      }
+    ],
+    "status": "working",
+    "created_at": "2025-08-26T03:59:44.899365538Z",
+    "updated_at": "2025-08-26T03:59:44.899368504Z"
   }
 ]
