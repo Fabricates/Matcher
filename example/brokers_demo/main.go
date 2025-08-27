@@ -72,7 +72,66 @@ func main() {
 
 	fmt.Println()
 
-	// Example 2: Kafka Event Broker
+	// Example 2: Redis CAS Event Broker
+	fmt.Println("=== Redis CAS Event Broker Example ===")
+	redisCASConfig := matcher.RedisCASConfig{
+		RedisAddr:    "localhost:6379",
+		Password:     "",
+		DB:           0,
+		NodeID:       "node-redis-cas-demo",
+		Namespace:    "matcher-cas-demo",
+		PollInterval: 1 * time.Second,
+	}
+
+	redisCASBroker, err := matcher.NewRedisCASBroker(redisCASConfig)
+	if err != nil {
+		log.Printf("Failed to create Redis CAS broker: %v", err)
+	} else {
+		defer redisCASBroker.Close()
+
+		// Test health
+		if err := redisCASBroker.Health(ctx); err != nil {
+			log.Printf("Redis CAS broker health check failed: %v", err)
+		} else {
+			fmt.Println("Redis CAS broker is healthy")
+
+			// Create event channel
+			events := make(chan *matcher.Event, 10)
+
+			// Subscribe to events
+			go func() {
+				if err := redisCASBroker.Subscribe(ctx, events); err != nil {
+					log.Printf("Failed to subscribe: %v", err)
+				}
+			}()
+
+			// Publish a test event
+			testEvent := &matcher.Event{
+				Type:      matcher.EventTypeRuleUpdated,
+				Timestamp: time.Now(),
+				NodeID:    "node-redis-cas-demo",
+				Data:      "This is a test event from Redis CAS broker",
+			}
+
+			if err := redisCASBroker.Publish(ctx, testEvent); err != nil {
+				log.Printf("Failed to publish event: %v", err)
+			} else {
+				fmt.Println("Published test event to Redis CAS")
+			}
+
+			// Wait for event (timeout after 3 seconds to allow for polling)
+			select {
+			case receivedEvent := <-events:
+				fmt.Printf("Received event from Redis CAS: %+v\n", receivedEvent)
+			case <-time.After(3 * time.Second):
+				fmt.Println("No event received from Redis CAS (this is expected if Redis server is not running)")
+			}
+		}
+	}
+
+	fmt.Println()
+
+	// Example 3: Kafka Event Broker
 	fmt.Println("=== Kafka Event Broker Example ===")
 	kafkaConfig := matcher.KafkaConfig{
 		Brokers:       []string{"localhost:9092"},
@@ -129,7 +188,7 @@ func main() {
 
 	fmt.Println()
 
-	// Example 3: In-Memory Event Broker (always works)
+	// Example 4: In-Memory Event Broker (always works)
 	fmt.Println("=== In-Memory Event Broker Example ===")
 	memoryBroker := matcher.NewInMemoryEventBroker("node-memory-demo")
 	defer memoryBroker.Close()

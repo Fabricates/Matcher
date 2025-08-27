@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 	// Simulate multiple nodes in a cluster
 	nodes := []string{"node-1", "node-2", "node-3"}
 	engines := make([]*matcher.MatcherEngine, len(nodes))
-	brokers := make([]matcher.EventBrokerInterface, len(nodes))
+	brokers := make([]matcher.Broker, len(nodes))
 
 	// Create engines for each node with event brokers
 	for i, nodeID := range nodes {
@@ -216,7 +216,7 @@ func main() {
 }
 
 // connectBrokers simulates connecting brokers in a distributed system
-func connectBrokers(brokers []matcher.EventBrokerInterface) {
+func connectBrokers(brokers []matcher.Broker) {
 	// This is a simplified simulation - in reality, brokers would be
 	// connected through a message queue like Kafka
 
@@ -238,7 +238,7 @@ func connectBrokers(brokers []matcher.EventBrokerInterface) {
 				for event := range forwardChan {
 					for j, otherBroker := range brokers {
 						if j != brokerIndex { // Don't forward to self
-							go func(ob matcher.EventBrokerInterface, e *matcher.Event) {
+							go func(ob matcher.Broker, e *matcher.Event) {
 								ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 								defer cancel()
 								ob.Publish(ctx, e)

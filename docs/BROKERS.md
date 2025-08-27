@@ -4,7 +4,7 @@ This document describes the event broker implementations available in the matche
 
 ## Overview
 
-The matcher module provides an `EventBrokerInterface` that can be implemented by different message brokers to enable distributed event communication between matcher instances. This allows multiple nodes to coordinate rule changes, dimension updates, and other events.
+The matcher module provides an `Broker` that can be implemented by different message brokers to enable distributed event communication between matcher instances. This allows multiple nodes to coordinate rule changes, dimension updates, and other events.
 
 ## Available Brokers
 

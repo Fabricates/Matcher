@@ -41,9 +41,9 @@ func (mt MatchType) String() string {
 // DimensionConfig defines the configuration for a dimension
 type DimensionConfig struct {
 	Name          string  `json:"name"`
-	Index         int     `json:"index"`         // Order of this dimension
-	Required      bool    `json:"required"`      // Whether this dimension is required for matching
-	Weight        float64 `json:"weight"`        // Default weight for this dimension
+	Index         int     `json:"index"`                    // Order of this dimension
+	Required      bool    `json:"required"`                 // Whether this dimension is required for matching
+	Weight        float64 `json:"weight"`                   // Default weight for this dimension
 	TenantID      string  `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
 	ApplicationID string  `json:"application_id,omitempty"` // Application identifier for multi-application support
 }
@@ -70,17 +70,17 @@ type Rule struct {
 }
 
 // RuleWithWeight can be used as search candidates
-type RuleWithWeight struct{
+type RuleWithWeight struct {
 	*Rule
 	Weight float64
 }
 
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
-	TenantID        string            `json:"tenant_id,omitempty"`        // Tenant identifier for scoped queries
-	ApplicationID   string            `json:"application_id,omitempty"`   // Application identifier for scoped queries
-	Values          map[string]string `json:"values"`                     // dimension_name -> value
-	IncludeAllRules bool              `json:"include_all_rules"`          // When true, includes draft rules in search; defaults to false (working rules only)
+	TenantID        string            `json:"tenant_id,omitempty"`      // Tenant identifier for scoped queries
+	ApplicationID   string            `json:"application_id,omitempty"` // Application identifier for scoped queries
+	Values          map[string]string `json:"values"`                   // dimension_name -> value
+	IncludeAllRules bool              `json:"include_all_rules"`        // When true, includes draft rules in search; defaults to false (working rules only)
 }
 
 // MatchResult represents the result of a rule matching operation
@@ -136,8 +136,8 @@ type DimensionEvent struct {
 	Dimension *DimensionConfig `json:"dimension"`
 }
 
-// EventBrokerInterface defines the unified interface for both event publishing and subscription
-type EventBrokerInterface interface {
+// Broker defines the unified interface for both event publishing and subscription
+type Broker interface {
 	// Publish publishes an event to the message queue
 	Publish(ctx context.Context, event *Event) error
 

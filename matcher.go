@@ -17,7 +17,7 @@ type InMemoryMatcher struct {
 	stats                 *MatcherStats
 	cache                 *QueryCache
 	persistence           PersistenceInterface
-	eventBroker           EventBrokerInterface // Changed from eventSub to eventBroker
+	broker                Broker // Changed from eventSub to eventBroker
 	eventsChan            chan *Event
 	nodeID                string // Node identifier for filtering events
 	allowDuplicateWeights bool   // When false (default), prevents rules with same weight
@@ -27,7 +27,7 @@ type InMemoryMatcher struct {
 }
 
 // CreateInMemoryMatcher creates an in-memory matcher
-func NewInMemoryMatcher(persistence PersistenceInterface, eventBroker EventBrokerInterface, nodeID string) (*InMemoryMatcher, error) {
+func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	matcher := &InMemoryMatcher{
@@ -40,7 +40,7 @@ func NewInMemoryMatcher(persistence PersistenceInterface, eventBroker EventBroke
 		},
 		cache:       NewQueryCache(1000, 10*time.Minute), // 1000 entries, 10 min TTL
 		persistence: persistence,
-		eventBroker: eventBroker,
+		broker:      broker,
 		eventsChan:  make(chan *Event, 100),
 		nodeID:      nodeID,
 		ctx:         ctx,
@@ -54,7 +54,7 @@ func NewInMemoryMatcher(persistence PersistenceInterface, eventBroker EventBroke
 	}
 
 	// Start event subscription if provided
-	if eventBroker != nil {
+	if broker != nil {
 		if err := matcher.startEventSubscription(); err != nil {
 			cancel()
 			return nil, fmt.Errorf("failed to start event subscription: %w", err)
@@ -148,7 +148,7 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 
 // startEventSubscription starts listening for events from the event subscriber
 func (m *InMemoryMatcher) startEventSubscription() error {
-	if err := m.eventBroker.Subscribe(m.ctx, m.eventsChan); err != nil {
+	if err := m.broker.Subscribe(m.ctx, m.eventsChan); err != nil {
 		return fmt.Errorf("failed to subscribe to events: %w", err)
 	}
 
@@ -251,7 +251,7 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	m.stats.LastUpdated = now
 
 	// Publish event to message queue
-	if m.eventBroker != nil {
+	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeRuleAdded,
 			Timestamp: now,
@@ -316,7 +316,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue
-	if m.eventBroker != nil {
+	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeRuleUpdated,
 			Timestamp: time.Now(),
@@ -369,7 +369,7 @@ func (m *InMemoryMatcher) deleteRule(ruleID string) error {
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue
-	if m.eventBroker != nil {
+	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeRuleDeleted,
 			Timestamp: time.Now(),
@@ -411,7 +411,7 @@ func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue
-	if m.eventBroker != nil {
+	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeDimensionAdded,
 			Timestamp: time.Now(),
@@ -444,7 +444,7 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue if dimension existed
-	if exists && m.eventBroker != nil {
+	if exists && m.broker != nil {
 		event := &Event{
 			Type:      EventTypeDimensionDeleted,
 			Timestamp: time.Now(),
@@ -862,8 +862,8 @@ func (m *InMemoryMatcher) SaveToPersistence() error {
 func (m *InMemoryMatcher) Close() error {
 	m.cancel()
 
-	if m.eventBroker != nil {
-		return m.eventBroker.Close()
+	if m.broker != nil {
+		return m.broker.Close()
 	}
 
 	return nil
@@ -951,8 +951,8 @@ func (m *InMemoryMatcher) Health() error {
 	}
 
 	// Check event broker health if available
-	if m.eventBroker != nil {
-		if err := m.eventBroker.Health(m.ctx); err != nil {
+	if m.broker != nil {
+		if err := m.broker.Health(m.ctx); err != nil {
 			return fmt.Errorf("event broker unhealthy: %w", err)
 		}
 	}
@@ -962,14 +962,14 @@ func (m *InMemoryMatcher) Health() error {
 
 // publishEvent publishes an event to the message queue
 func (m *InMemoryMatcher) publishEvent(event *Event) {
-	if m.eventBroker == nil {
+	if m.broker == nil {
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := m.eventBroker.Publish(ctx, event); err != nil {
+	if err := m.broker.Publish(ctx, event); err != nil {
 		// Log error but don't fail the operation
 		fmt.Printf("Failed to publish event: %v\n", err)
 	}
