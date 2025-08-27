@@ -10,8 +10,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RedisEventBroker implements EventBrokerInterface using Redis Streams
-type RedisEventBroker struct {
+// RedisBroker implements Broker using Redis Streams
+type RedisBroker struct {
 	client        *redis.Client
 	consumerGroup string
 	consumerName  string
@@ -36,7 +36,7 @@ type RedisEventBrokerConfig struct {
 }
 
 // NewRedisEventBroker creates a new Redis-based event broker
-func NewRedisEventBroker(config RedisEventBrokerConfig) (*RedisEventBroker, error) {
+func NewRedisEventBroker(config RedisEventBrokerConfig) (*RedisBroker, error) {
 	// Create Redis client
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     config.RedisAddr,
@@ -63,7 +63,7 @@ func NewRedisEventBroker(config RedisEventBrokerConfig) (*RedisEventBroker, erro
 		config.ConsumerName = fmt.Sprintf("node-%s", config.NodeID)
 	}
 
-	broker := &RedisEventBroker{
+	broker := &RedisBroker{
 		client:        rdb,
 		streamName:    config.StreamName,
 		consumerGroup: config.ConsumerGroup,
@@ -81,7 +81,7 @@ func NewRedisEventBroker(config RedisEventBrokerConfig) (*RedisEventBroker, erro
 }
 
 // ensureConsumerGroup creates the consumer group if it doesn't exist
-func (r *RedisEventBroker) ensureConsumerGroup(ctx context.Context) error {
+func (r *RedisBroker) ensureConsumerGroup(ctx context.Context) error {
 	// Try to create the consumer group
 	err := r.client.XGroupCreate(ctx, r.streamName, r.consumerGroup, "0").Err()
 	if err != nil && err.Error() != "BUSYGROUP Consumer Group name already exists" {
@@ -91,7 +91,7 @@ func (r *RedisEventBroker) ensureConsumerGroup(ctx context.Context) error {
 }
 
 // Publish publishes an event to the Redis stream
-func (r *RedisEventBroker) Publish(ctx context.Context, event *Event) error {
+func (r *RedisBroker) Publish(ctx context.Context, event *Event) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -120,7 +120,7 @@ func (r *RedisEventBroker) Publish(ctx context.Context, event *Event) error {
 }
 
 // Subscribe starts listening for events from the Redis stream
-func (r *RedisEventBroker) Subscribe(ctx context.Context, events chan<- *Event) error {
+func (r *RedisBroker) Subscribe(ctx context.Context, events chan<- *Event) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -139,7 +139,7 @@ func (r *RedisEventBroker) Subscribe(ctx context.Context, events chan<- *Event) 
 }
 
 // consumeMessages runs the message consumption loop
-func (r *RedisEventBroker) consumeMessages(ctx context.Context) {
+func (r *RedisBroker) consumeMessages(ctx context.Context) {
 	defer r.wg.Done()
 
 	for {
@@ -182,7 +182,7 @@ func (r *RedisEventBroker) consumeMessages(ctx context.Context) {
 }
 
 // processMessage processes a single Redis stream message
-func (r *RedisEventBroker) processMessage(ctx context.Context, message redis.XMessage) error {
+func (r *RedisBroker) processMessage(ctx context.Context, message redis.XMessage) error {
 	eventData, ok := message.Values["event"].(string)
 	if !ok {
 		return fmt.Errorf("invalid event data in message")
@@ -220,12 +220,12 @@ func (r *RedisEventBroker) processMessage(ctx context.Context, message redis.XMe
 }
 
 // Health checks the health of the Redis connection
-func (r *RedisEventBroker) Health(ctx context.Context) error {
+func (r *RedisBroker) Health(ctx context.Context) error {
 	return r.client.Ping(ctx).Err()
 }
 
 // Close closes the Redis event broker
-func (r *RedisEventBroker) Close() error {
+func (r *RedisBroker) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
