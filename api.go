@@ -35,7 +35,7 @@ func NewMatcherEngine(persistence PersistenceInterface, eventBroker Broker, node
 func NewMatcherEngineWithDefaults(dataDir string) (*MatcherEngine, error) {
 	persistence := NewJSONPersistence(dataDir)
 	// Generate a default node ID based on hostname or use a UUID
-	nodeID := generateDefaultNodeID()
+	nodeID := GenerateDefaultNodeID()
 	return NewMatcherEngine(persistence, nil, nodeID)
 }
 
@@ -343,15 +343,18 @@ func (me *MatcherEngine) RebuildIndex() error {
 	return me.matcher.Rebuild()
 }
 
-// generateDefaultNodeID generates a default node ID based on hostname and random suffix
-func generateDefaultNodeID() string {
+// GenerateDefaultNodeID generates a default node ID based on hostname and random suffix
+func GenerateDefaultNodeID() string {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown"
 	}
 
-	// Add random suffix to ensure uniqueness
-	randBytes := make([]byte, 4)
+	// Add 6-digit random suffix to ensure uniqueness
+	randBytes := make([]byte, 3)
 	rand.Read(randBytes)
-	return fmt.Sprintf("%s-%x", hostname, randBytes)
+	// Convert 3 bytes to a 6-digit decimal number (0-999999)
+	randNum := int(randBytes[0])<<16 | int(randBytes[1])<<8 | int(randBytes[2])
+	randNum = randNum % 1000000 // Ensure it's within 6 digits
+	return fmt.Sprintf("%s-%06d", hostname, randNum)
 }
