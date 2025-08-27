@@ -56,14 +56,14 @@ func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
 		}
 		keyString += key
 	}
-	
+
 	// Include IncludeAllRules flag in the key to distinguish cache entries
 	if query.IncludeAllRules {
 		keyString += "|include_all:true"
 	} else {
 		keyString += "|include_all:false"
 	}
-	
+
 	// Include tenant and application context to ensure isolation
 	keyString += fmt.Sprintf("|tenant:%s|app:%s", query.TenantID, query.ApplicationID)
 

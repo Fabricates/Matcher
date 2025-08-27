@@ -309,16 +309,16 @@ func (r *RedisCASBroker) GetLastTimestamp() int64 {
 // WaitForTimestamp waits for events to reach at least the specified timestamp
 func (r *RedisCASBroker) WaitForTimestamp(ctx context.Context, targetTimestamp int64, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	
+
 	for time.Now().Before(deadline) {
 		r.timestampMu.RLock()
 		currentTs := r.lastTimestamp
 		r.timestampMu.RUnlock()
-		
+
 		if currentTs >= targetTimestamp {
 			return nil
 		}
-		
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -329,7 +329,7 @@ func (r *RedisCASBroker) WaitForTimestamp(ctx context.Context, targetTimestamp i
 			}
 		}
 	}
-	
+
 	return fmt.Errorf("timeout waiting for timestamp %d", targetTimestamp)
 }
 

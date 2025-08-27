@@ -64,14 +64,14 @@ func (jp *JSONPersistence) LoadRulesByTenant(ctx context.Context, tenantID, appl
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var filteredRules []*Rule
 	for _, rule := range allRules {
 		if rule.MatchesTenantContext(tenantID, applicationID) {
 			filteredRules = append(filteredRules, rule)
 		}
 	}
-	
+
 	return filteredRules, nil
 }
 
@@ -115,16 +115,16 @@ func (jp *JSONPersistence) LoadDimensionConfigsByTenant(ctx context.Context, ten
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var filteredConfigs []*DimensionConfig
 	for _, config := range allConfigs {
 		// Match tenant context or include global configs (empty tenant/app)
-		if (config.TenantID == "" && config.ApplicationID == "") || 
-		   (config.TenantID == tenantID && config.ApplicationID == applicationID) {
+		if (config.TenantID == "" && config.ApplicationID == "") ||
+			(config.TenantID == tenantID && config.ApplicationID == applicationID) {
 			filteredConfigs = append(filteredConfigs, config)
 		}
 	}
-	
+
 	return filteredConfigs, nil
 }
 

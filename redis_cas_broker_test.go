@@ -676,7 +676,7 @@ func TestForestInitializeDimension(t *testing.T) {
 	originalOrderLength := len(order)
 	forest.InitializeDimension("test-dimension")
 	newOrder := forest.GetDimensionOrder()
-	
+
 	// Order should remain the same since InitializeDimension is a no-op
 	if len(newOrder) != originalOrderLength {
 		t.Errorf("Expected dimension order length to remain %d after no-op InitializeDimension, got %d", originalOrderLength, len(newOrder))
@@ -806,10 +806,10 @@ func TestLoadDimensionConfigsByTenant(t *testing.T) {
 	}
 
 	config3 := &DimensionConfig{
-		Name:          "service",
-		Index:         2,
-		Required:      false,
-		Weight:        0.8,
+		Name:     "service",
+		Index:    2,
+		Required: false,
+		Weight:   0.8,
 		// Global config (no tenant/app)
 	}
 
@@ -842,7 +842,7 @@ func TestLoadDimensionConfigsByTenant(t *testing.T) {
 	if len(tenant1Configs) != 2 {
 		t.Errorf("Expected 2 dimension configs for tenant1 (1 tenant-specific + 1 global), got %d", len(tenant1Configs))
 	}
-	
+
 	// Check that we have both the tenant-specific and global configs
 	foundRegion := false
 	foundService := false

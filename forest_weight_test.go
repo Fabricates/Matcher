@@ -63,7 +63,7 @@ func TestForestWeightOrdering(t *testing.T) {
 		weight1 := candidates[1].CalculateTotalWeight()
 		weight2 := candidates[2].CalculateTotalWeight()
 
-		t.Logf("Rule order: %s (%.1f), %s (%.1f), %s (%.1f)", 
+		t.Logf("Rule order: %s (%.1f), %s (%.1f), %s (%.1f)",
 			candidates[0].ID, weight0,
 			candidates[1].ID, weight1,
 			candidates[2].ID, weight2)
