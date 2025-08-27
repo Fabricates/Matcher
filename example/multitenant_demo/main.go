@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Multi-Tenant Rule Matching Engine Demo ===\n")
+	fmt.Println("=== Multi-Tenant Rule Matching Engine Demo ===")
 
 	// Create engine with JSON persistence
 	engine, err := matcher.NewMatcherEngineWithDefaults("./demo_data")

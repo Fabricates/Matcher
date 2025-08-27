@@ -11,13 +11,13 @@ import (
 type MatcherEngine struct {
 	matcher      *InMemoryMatcher
 	persistence  PersistenceInterface
-	eventBroker  EventBrokerInterface // Changed from eventSub to eventBroker
-	nodeID       string               // Create forest index
+	eventBroker  Broker // Changed from eventSub to eventBroker
+	nodeID       string // Create forest index
 	autoSaveStop chan bool
 }
 
 // NewMatcherEngine creates a new matcher engine with the specified persistence and event broker
-func NewMatcherEngine(persistence PersistenceInterface, eventBroker EventBrokerInterface, nodeID string) (*MatcherEngine, error) {
+func NewMatcherEngine(persistence PersistenceInterface, eventBroker Broker, nodeID string) (*MatcherEngine, error) {
 	matcher, err := NewInMemoryMatcher(persistence, eventBroker, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create matcher: %w", err)
@@ -117,12 +117,12 @@ func (rb *RuleBuilder) Build() *Rule {
 		rb.rule.CreatedAt = now
 	}
 	rb.rule.UpdatedAt = now
-	
+
 	// Set default status if not specified
 	if rb.rule.Status == "" {
 		rb.rule.Status = RuleStatusWorking
 	}
-	
+
 	return rb.rule
 }
 
@@ -308,17 +308,17 @@ func CreateQueryWithAllRulesAndTenant(tenantID, applicationID string, values map
 func (me *MatcherEngine) GetForestStats() map[string]interface{} {
 	me.matcher.mu.RLock()
 	defer me.matcher.mu.RUnlock()
-	
+
 	stats := make(map[string]interface{})
-	
+
 	for key, forestIndex := range me.matcher.forestIndexes {
 		stats[key] = forestIndex.GetStats()
 	}
-	
+
 	// Add summary stats
 	stats["total_forests"] = len(me.matcher.forestIndexes)
 	stats["total_rules"] = len(me.matcher.rules)
-	
+
 	return stats
 }
 

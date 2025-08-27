@@ -345,9 +345,9 @@ func TestRedisEventBrokerCreation(t *testing.T) {
 }
 
 // Test event broker interface compliance
-func TestEventBrokerInterface(t *testing.T) {
+func TestBroker(t *testing.T) {
 	// Test that our brokers implement the interface
-	var _ EventBrokerInterface = NewInMemoryEventBroker("test")
+	var _ Broker = NewInMemoryEventBroker("test")
 
 	// Test with valid configs (will fail to connect but that's expected)
 	kafkaConfig := KafkaConfig{
@@ -358,7 +358,7 @@ func TestEventBrokerInterface(t *testing.T) {
 	}
 
 	if kafkaBroker, err := NewKafkaEventBroker(kafkaConfig); err == nil {
-		var _ EventBrokerInterface = kafkaBroker
+		var _ Broker = kafkaBroker
 		kafkaBroker.Close()
 	}
 
@@ -372,7 +372,21 @@ func TestEventBrokerInterface(t *testing.T) {
 
 	// Redis broker creation should fail due to invalid address
 	if redisBroker, err := NewRedisEventBroker(redisConfig); err == nil {
-		var _ EventBrokerInterface = redisBroker
+		var _ Broker = redisBroker
 		redisBroker.Close()
+	}
+
+	// Test Redis CAS broker interface compliance
+	redisCASConfig := RedisCASConfig{
+		RedisAddr:    "localhost:9999", // Use invalid port to test creation
+		NodeID:       "test-node",
+		Namespace:    "test",
+		PollInterval: 2 * time.Second,
+	}
+
+	// Redis CAS broker creation should fail due to invalid address
+	if redisCASBroker, err := NewRedisCASBroker(redisCASConfig); err == nil {
+		var _ Broker = redisCASBroker
+		redisCASBroker.Close()
 	}
 }

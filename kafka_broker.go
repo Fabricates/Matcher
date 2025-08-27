@@ -10,8 +10,8 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// KafkaEventBroker implements EventBrokerInterface using Apache Kafka
-type KafkaEventBroker struct {
+// KafkaBroker implements Broker using Apache Kafka
+type KafkaBroker struct {
 	brokers       []string
 	topic         string
 	consumerGroup string
@@ -34,7 +34,7 @@ type KafkaConfig struct {
 }
 
 // NewKafkaEventBroker creates a new Kafka-based event broker
-func NewKafkaEventBroker(config KafkaConfig) (*KafkaEventBroker, error) {
+func NewKafkaEventBroker(config KafkaConfig) (*KafkaBroker, error) {
 	if len(config.Brokers) == 0 {
 		return nil, fmt.Errorf("at least one broker must be specified")
 	}
@@ -69,7 +69,7 @@ func NewKafkaEventBroker(config KafkaConfig) (*KafkaEventBroker, error) {
 		MaxBytes:       10e6, // 10MB
 	})
 
-	broker := &KafkaEventBroker{
+	broker := &KafkaBroker{
 		brokers:       config.Brokers,
 		topic:         config.Topic,
 		consumerGroup: config.ConsumerGroup,
@@ -83,7 +83,7 @@ func NewKafkaEventBroker(config KafkaConfig) (*KafkaEventBroker, error) {
 }
 
 // Publish publishes an event to the Kafka topic
-func (k *KafkaEventBroker) Publish(ctx context.Context, event *Event) error {
+func (k *KafkaBroker) Publish(ctx context.Context, event *Event) error {
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 
@@ -117,7 +117,7 @@ func (k *KafkaEventBroker) Publish(ctx context.Context, event *Event) error {
 }
 
 // Subscribe starts listening for events and sends them to the provided channel
-func (k *KafkaEventBroker) Subscribe(ctx context.Context, events chan<- *Event) error {
+func (k *KafkaBroker) Subscribe(ctx context.Context, events chan<- *Event) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
@@ -135,7 +135,7 @@ func (k *KafkaEventBroker) Subscribe(ctx context.Context, events chan<- *Event) 
 }
 
 // eventLoop runs the main event consumption loop
-func (k *KafkaEventBroker) eventLoop(ctx context.Context) {
+func (k *KafkaBroker) eventLoop(ctx context.Context) {
 	defer k.wg.Done()
 
 	for {
@@ -168,7 +168,7 @@ func (k *KafkaEventBroker) eventLoop(ctx context.Context) {
 }
 
 // processMessage processes a Kafka message and converts it to an Event
-func (k *KafkaEventBroker) processMessage(ctx context.Context, message kafka.Message) error {
+func (k *KafkaBroker) processMessage(ctx context.Context, message kafka.Message) error {
 	// Deserialize event
 	var event Event
 	if err := json.Unmarshal(message.Value, &event); err != nil {
@@ -195,7 +195,7 @@ func (k *KafkaEventBroker) processMessage(ctx context.Context, message kafka.Mes
 }
 
 // Health checks the health of the Kafka connection
-func (k *KafkaEventBroker) Health(ctx context.Context) error {
+func (k *KafkaBroker) Health(ctx context.Context) error {
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 
@@ -216,7 +216,7 @@ func (k *KafkaEventBroker) Health(ctx context.Context) error {
 }
 
 // Close closes the Kafka event broker and cleans up resources
-func (k *KafkaEventBroker) Close() error {
+func (k *KafkaBroker) Close() error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
@@ -243,7 +243,7 @@ func (k *KafkaEventBroker) Close() error {
 	return nil
 }
 
-// InMemoryEventBroker implements EventBrokerInterface for testing and development
+// InMemoryEventBroker implements Broker for testing and development
 type InMemoryEventBroker struct {
 	events      []Event
 	subscribers []chan<- *Event
