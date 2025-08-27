@@ -375,4 +375,18 @@ func TestBroker(t *testing.T) {
 		var _ Broker = redisBroker
 		redisBroker.Close()
 	}
+
+	// Test Redis CAS broker interface compliance
+	redisCASConfig := RedisCASConfig{
+		RedisAddr:    "localhost:9999", // Use invalid port to test creation
+		NodeID:       "test-node",
+		Namespace:    "test",
+		PollInterval: 2 * time.Second,
+	}
+
+	// Redis CAS broker creation should fail due to invalid address
+	if redisCASBroker, err := NewRedisCASBroker(redisCASConfig); err == nil {
+		var _ Broker = redisCASBroker
+		redisCASBroker.Close()
+	}
 }

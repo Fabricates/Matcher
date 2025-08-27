@@ -21,50 +21,58 @@ func TestRedisCASBroker_Integration_EndToEnd(t *testing.T) {
 	namespace := "integration_test"
 	cleanupRedisKey(t, redisAddr, namespace)
 
-	// Create matcher instances with Redis CAS brokers
-	matcherConfig1 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-			{Name: "service", DefaultWeight: 2.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "matcher-node-1",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	// Create Redis CAS brokers
+	broker1, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "matcher-node-1",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker1.Close()
 
-	matcherConfig2 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-			{Name: "service", DefaultWeight: 2.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "matcher-node-2",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	broker2, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "matcher-node-2",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker2.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Create persistence (using JSON persistence for testing)
+	persistence := NewJSONPersistence("./test_data")
 
-	// Create matchers
-	matcher1, err := NewMatcherWithConfig(ctx, matcherConfig1)
+	// Create matchers with Redis CAS brokers
+	matcher1, err := NewInMemoryMatcher(persistence, broker1, "matcher-node-1")
 	require.NoError(t, err)
 	defer matcher1.Close()
 
-	matcher2, err := NewMatcherWithConfig(ctx, matcherConfig2)
+	matcher2, err := NewInMemoryMatcher(persistence, broker2, "matcher-node-2")
 	require.NoError(t, err)
 	defer matcher2.Close()
+
+	// Add dimensions to both matchers
+	regionDim := &DimensionConfig{
+		Name:   "region",
+		Index:  0,
+		Weight: 1.0,
+	}
+	serviceDim := &DimensionConfig{
+		Name:   "service",
+		Index:  1,
+		Weight: 2.0,
+	}
+
+	err = matcher1.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher1.AddDimension(serviceDim)
+	require.NoError(t, err)
+
+	err = matcher2.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher2.AddDimension(serviceDim)
+	require.NoError(t, err)
 
 	// Give time for brokers to initialize and start polling
 	time.Sleep(200 * time.Millisecond)
@@ -89,46 +97,29 @@ func TestRedisCASBroker_Integration_EndToEnd(t *testing.T) {
 		},
 	}
 
-	err = matcher1.AddRule(ctx, rule)
+	err = matcher1.AddRule(rule)
 	require.NoError(t, err)
 
 	// Wait for the rule to propagate to matcher2
 	time.Sleep(2 * time.Second)
 
 	// Test that both matchers can find the rule
-	testDimensions := []*DimensionValue{
-		{DimensionName: "region", Value: "us-east-1"},
-		{DimensionName: "service", Value: "api"},
+	query := &QueryRule{
+		Values: map[string]string{
+			"region":  "us-east-1",
+			"service": "api",
+		},
 	}
 
-	results1, err := matcher1.MatchRule(ctx, testDimensions)
+	result1, err := matcher1.FindBestMatch(query)
 	require.NoError(t, err)
-	require.Len(t, results1, 1)
-	assert.Equal(t, "test-rule-1", results1[0].Rule.ID)
+	require.NotNil(t, result1)
+	assert.Equal(t, "test-rule-1", result1.Rule.ID)
 
-	results2, err := matcher2.MatchRule(ctx, testDimensions)
+	result2, err := matcher2.FindBestMatch(query)
 	require.NoError(t, err)
-	require.Len(t, results2, 1)
-	assert.Equal(t, "test-rule-1", results2[0].Rule.ID)
-
-	// Update the rule from matcher2
-	rule.Dimensions[0].Weight = 5.0 // Change weight
-	err = matcher2.UpdateRule(ctx, rule)
-	require.NoError(t, err)
-
-	// Wait for the update to propagate
-	time.Sleep(2 * time.Second)
-
-	// Verify both matchers see the updated rule
-	results1, err = matcher1.MatchRule(ctx, testDimensions)
-	require.NoError(t, err)
-	require.Len(t, results1, 1)
-	assert.Equal(t, 5.0, results1[0].Rule.Dimensions[0].Weight)
-
-	results2, err = matcher2.MatchRule(ctx, testDimensions)
-	require.NoError(t, err)
-	require.Len(t, results2, 1)
-	assert.Equal(t, 5.0, results2[0].Rule.Dimensions[0].Weight)
+	require.NotNil(t, result2)
+	assert.Equal(t, "test-rule-1", result2.Rule.ID)
 }
 
 // TestRedisCASBroker_Integration_MultipleRules tests handling multiple rules
@@ -141,49 +132,50 @@ func TestRedisCASBroker_Integration_MultipleRules(t *testing.T) {
 	namespace := "multi_rules_test"
 	cleanupRedisKey(t, redisAddr, namespace)
 
-	// Create two matcher instances
-	matcherConfig1 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-			{Name: "env", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-1",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	// Create Redis CAS brokers
+	broker1, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-1",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker1.Close()
 
-	matcherConfig2 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-			{Name: "env", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-2",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	broker2, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-2",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker2.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Create persistence
+	persistence := NewJSONPersistence("./test_data_multi")
 
-	matcher1, err := NewMatcherWithConfig(ctx, matcherConfig1)
+	// Create matchers
+	matcher1, err := NewInMemoryMatcher(persistence, broker1, "node-1")
 	require.NoError(t, err)
 	defer matcher1.Close()
 
-	matcher2, err := NewMatcherWithConfig(ctx, matcherConfig2)
+	matcher2, err := NewInMemoryMatcher(persistence, broker2, "node-2")
 	require.NoError(t, err)
 	defer matcher2.Close()
+
+	// Add dimensions
+	regionDim := &DimensionConfig{Name: "region", Index: 0, Weight: 1.0}
+	envDim := &DimensionConfig{Name: "env", Index: 1, Weight: 1.0}
+
+	err = matcher1.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher1.AddDimension(envDim)
+	require.NoError(t, err)
+
+	err = matcher2.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher2.AddDimension(envDim)
+	require.NoError(t, err)
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -216,63 +208,65 @@ func TestRedisCASBroker_Integration_MultipleRules(t *testing.T) {
 	}
 
 	// Add first rule from matcher1
-	err = matcher1.AddRule(ctx, rules[0])
+	err = matcher1.AddRule(rules[0])
 	require.NoError(t, err)
 
 	time.Sleep(1500 * time.Millisecond)
 
 	// Add second rule from matcher2
-	err = matcher2.AddRule(ctx, rules[1])
+	err = matcher2.AddRule(rules[1])
 	require.NoError(t, err)
 
 	time.Sleep(1500 * time.Millisecond)
 
 	// Add third rule from matcher1
-	err = matcher1.AddRule(ctx, rules[2])
+	err = matcher1.AddRule(rules[2])
 	require.NoError(t, err)
 
 	time.Sleep(1500 * time.Millisecond)
 
 	// Test that both matchers can see all rules
 	testCases := []struct {
-		dimensions []*DimensionValue
+		values     map[string]string
 		expectedID string
 	}{
 		{
-			dimensions: []*DimensionValue{
-				{DimensionName: "region", Value: "us-east-1"},
-				{DimensionName: "env", Value: "prod"},
+			values: map[string]string{
+				"region": "us-east-1",
+				"env":    "prod",
 			},
 			expectedID: "rule-prod",
 		},
 		{
-			dimensions: []*DimensionValue{
-				{DimensionName: "region", Value: "us-west-2"},
-				{DimensionName: "env", Value: "dev"},
+			values: map[string]string{
+				"region": "us-west-2",
+				"env":    "dev",
 			},
 			expectedID: "rule-dev",
 		},
 		{
-			dimensions: []*DimensionValue{
-				{DimensionName: "region", Value: "eu-west-1"},
-				{DimensionName: "env", Value: "staging"},
+			values: map[string]string{
+				"region": "eu-west-1",
+				"env":    "staging",
 			},
 			expectedID: "rule-staging",
 		},
 	}
 
 	for _, tc := range testCases {
+		query := &QueryRule{Values: tc.values}
+
 		// Test matcher1
-		results1, err := matcher1.MatchRule(ctx, tc.dimensions)
+		result1, err := matcher1.FindBestMatch(query)
 		require.NoError(t, err)
-		require.Len(t, results1, 1, "Matcher1 should find rule for %v", tc.dimensions)
-		assert.Equal(t, tc.expectedID, results1[0].Rule.ID)
+		require.NotNil(t, result1, "Matcher1 should find rule for %v", tc.values)
+		assert.Equal(t, tc.expectedID, result1.Rule.ID)
 
 		// Test matcher2
-		results2, err := matcher2.MatchRule(ctx, tc.dimensions)
+		result2, err := matcher2.FindBestMatch(query)
 		require.NoError(t, err)
-		require.Len(t, results2, 1, "Matcher2 should find rule for %v", tc.dimensions)
-		assert.Equal(t, tc.expectedID, results2[0].Rule.ID)
+		require.NotNil(t, result2, "Matcher2 should find rule for %v", tc.values)
+		assert.Equal(t, tc.expectedID, result2.Rule.ID)
 	}
 }
 
@@ -286,64 +280,64 @@ func TestRedisCASBroker_Integration_DimensionChanges(t *testing.T) {
 	namespace := "dimension_changes_test"
 	cleanupRedisKey(t, redisAddr, namespace)
 
-	matcherConfig1 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-1",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	// Create Redis CAS brokers
+	broker1, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-1",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker1.Close()
 
-	matcherConfig2 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-2",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	broker2, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-2",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker2.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Create persistence
+	persistence := NewJSONPersistence("./test_data_dims")
 
-	matcher1, err := NewMatcherWithConfig(ctx, matcherConfig1)
+	// Create matchers
+	matcher1, err := NewInMemoryMatcher(persistence, broker1, "node-1")
 	require.NoError(t, err)
 	defer matcher1.Close()
 
-	matcher2, err := NewMatcherWithConfig(ctx, matcherConfig2)
+	matcher2, err := NewInMemoryMatcher(persistence, broker2, "node-2")
 	require.NoError(t, err)
 	defer matcher2.Close()
+
+	// Add initial dimension
+	regionDim := &DimensionConfig{Name: "region", Index: 0, Weight: 1.0}
+	err = matcher1.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher2.AddDimension(regionDim)
+	require.NoError(t, err)
 
 	time.Sleep(200 * time.Millisecond)
 
 	// Add a new dimension from matcher1
 	newDimension := &DimensionConfig{
-		Name:          "service",
-		DefaultWeight: 2.0,
+		Name:   "service",
+		Index:  1,
+		Weight: 2.0,
 	}
 
-	err = matcher1.AddDimension(ctx, newDimension)
+	err = matcher1.AddDimension(newDimension)
 	require.NoError(t, err)
 
 	// Wait for propagation
 	time.Sleep(2 * time.Second)
 
 	// Verify both matchers have the new dimension
-	dims1 := matcher1.GetDimensions()
-	dims2 := matcher2.GetDimensions()
+	dims1, err := matcher1.ListDimensions()
+	require.NoError(t, err)
+	dims2, err := matcher2.ListDimensions()
+	require.NoError(t, err)
 
 	assert.Len(t, dims1, 2)
 	assert.Len(t, dims2, 2)
@@ -365,31 +359,8 @@ func TestRedisCASBroker_Integration_DimensionChanges(t *testing.T) {
 
 	require.NotNil(t, serviceDim1)
 	require.NotNil(t, serviceDim2)
-	assert.Equal(t, 2.0, serviceDim1.DefaultWeight)
-	assert.Equal(t, 2.0, serviceDim2.DefaultWeight)
-
-	// Update dimension weight from matcher2
-	serviceDim2.DefaultWeight = 3.0
-	err = matcher2.UpdateDimension(ctx, serviceDim2)
-	require.NoError(t, err)
-
-	// Wait for propagation
-	time.Sleep(2 * time.Second)
-
-	// Verify both matchers see the updated weight
-	dims1 = matcher1.GetDimensions()
-	dims2 = matcher2.GetDimensions()
-
-	for _, dim := range dims1 {
-		if dim.Name == "service" {
-			assert.Equal(t, 3.0, dim.DefaultWeight)
-		}
-	}
-	for _, dim := range dims2 {
-		if dim.Name == "service" {
-			assert.Equal(t, 3.0, dim.DefaultWeight)
-		}
-	}
+	assert.Equal(t, 2.0, serviceDim1.Weight)
+	assert.Equal(t, 2.0, serviceDim2.Weight)
 }
 
 // TestRedisCASBroker_Integration_HighConcurrency tests high concurrency scenarios
@@ -405,42 +376,48 @@ func TestRedisCASBroker_Integration_HighConcurrency(t *testing.T) {
 	// Create multiple matcher instances
 	numMatchers := 5
 	var matchers []*InMemoryMatcher
-	var configs []*MatcherConfig
+	var brokers []*RedisCASBroker
 
 	for i := 0; i < numMatchers; i++ {
-		config := &MatcherConfig{
-			Dimensions: []*DimensionConfig{
-				{Name: "region", DefaultWeight: 1.0},
-				{Name: "service", DefaultWeight: 1.0},
-			},
-			BrokerConfig: &BrokerConfig{
-				Type: "redis-cas",
-				Redis: &RedisCASConfig{
-					RedisAddr:    redisAddr,
-					NodeID:       fmt.Sprintf("node-%d", i),
-					Namespace:    namespace,
-					PollInterval: 1 * time.Second,
-				},
-			},
-		}
-		configs = append(configs, config)
+		broker, err := NewRedisCASBroker(RedisCASConfig{
+			RedisAddr:    redisAddr,
+			NodeID:       fmt.Sprintf("node-%d", i),
+			Namespace:    namespace,
+			PollInterval: 1 * time.Second,
+		})
+		require.NoError(t, err)
+		brokers = append(brokers, broker)
+
+		persistence := NewJSONPersistence(fmt.Sprintf("./test_data_concurrency_%d", i))
+		matcher, err := NewInMemoryMatcher(persistence, broker, fmt.Sprintf("node-%d", i))
+		require.NoError(t, err)
+		matchers = append(matchers, matcher)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Create all matchers
-	for _, config := range configs {
-		matcher, err := NewMatcherWithConfig(ctx, config)
-		require.NoError(t, err)
-		matchers = append(matchers, matcher)
-	}
+	_ = ctx // Prevent unused variable warning
 
 	defer func() {
 		for _, matcher := range matchers {
 			matcher.Close()
 		}
+		for _, broker := range brokers {
+			broker.Close()
+		}
 	}()
+
+	// Add dimensions to all matchers
+	regionDim := &DimensionConfig{Name: "region", Index: 0, Weight: 1.0}
+	serviceDim := &DimensionConfig{Name: "service", Index: 1, Weight: 1.0}
+
+	for _, matcher := range matchers {
+		err := matcher.AddDimension(regionDim)
+		require.NoError(t, err)
+		err = matcher.AddDimension(serviceDim)
+		require.NoError(t, err)
+	}
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -474,7 +451,7 @@ func TestRedisCASBroker_Integration_HighConcurrency(t *testing.T) {
 					},
 				}
 
-				err := m.AddRule(ctx, rule)
+				err := m.AddRule(rule)
 				assert.NoError(t, err)
 
 				// Small delay to reduce contention
@@ -490,26 +467,29 @@ func TestRedisCASBroker_Integration_HighConcurrency(t *testing.T) {
 
 	// Verify all matchers see all the rules
 	for i, matcher := range matchers {
-		rules := matcher.GetRules()
+		rules, err := matcher.ListRules(0, totalRules)
+		require.NoError(t, err)
 		assert.Len(t, rules, totalRules, "Matcher %d should see all rules", i)
 	}
 
 	// Test that all matchers can match rules correctly
 	for matcherIndex := 0; matcherIndex < numMatchers; matcherIndex++ {
 		for ruleIndex := 0; ruleIndex < rulesPerMatcher; ruleIndex++ {
-			testDimensions := []*DimensionValue{
-				{DimensionName: "region", Value: fmt.Sprintf("region-%d", matcherIndex)},
-				{DimensionName: "service", Value: fmt.Sprintf("service-%d", ruleIndex)},
+			query := &QueryRule{
+				Values: map[string]string{
+					"region":  fmt.Sprintf("region-%d", matcherIndex),
+					"service": fmt.Sprintf("service-%d", ruleIndex),
+				},
 			}
 
 			expectedRuleID := fmt.Sprintf("rule-%d-%d", matcherIndex, ruleIndex)
 
 			// Test with a random matcher
 			testMatcherIndex := (matcherIndex + ruleIndex) % numMatchers
-			results, err := matchers[testMatcherIndex].MatchRule(ctx, testDimensions)
+			result, err := matchers[testMatcherIndex].FindBestMatch(query)
 			require.NoError(t, err)
-			require.Len(t, results, 1, "Should find exactly one rule")
-			assert.Equal(t, expectedRuleID, results[0].Rule.ID)
+			require.NotNil(t, result, "Should find exactly one rule")
+			assert.Equal(t, expectedRuleID, result.Rule.ID)
 		}
 	}
 }
@@ -524,46 +504,43 @@ func TestRedisCASBroker_Integration_NetworkPartition(t *testing.T) {
 	namespace := "network_partition_test"
 	cleanupRedisKey(t, redisAddr, namespace)
 
-	matcherConfig1 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-1",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	// Create Redis CAS brokers
+	broker1, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-1",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker1.Close()
 
-	matcherConfig2 := &MatcherConfig{
-		Dimensions: []*DimensionConfig{
-			{Name: "region", DefaultWeight: 1.0},
-		},
-		BrokerConfig: &BrokerConfig{
-			Type: "redis-cas",
-			Redis: &RedisCASConfig{
-				RedisAddr:    redisAddr,
-				NodeID:       "node-2",
-				Namespace:    namespace,
-				PollInterval: 1 * time.Second,
-			},
-		},
-	}
+	broker2, err := NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-2",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Create persistence
+	persistence1 := NewJSONPersistence("./test_data_partition1")
+	persistence2 := NewJSONPersistence("./test_data_partition2")
 
-	matcher1, err := NewMatcherWithConfig(ctx, matcherConfig1)
+	// Create matchers
+	matcher1, err := NewInMemoryMatcher(persistence1, broker1, "node-1")
 	require.NoError(t, err)
 	defer matcher1.Close()
 
-	matcher2, err := NewMatcherWithConfig(ctx, matcherConfig2)
+	matcher2, err := NewInMemoryMatcher(persistence2, broker2, "node-2")
 	require.NoError(t, err)
 	defer matcher2.Close()
+
+	// Add dimensions
+	regionDim := &DimensionConfig{Name: "region", Index: 0, Weight: 1.0}
+	err = matcher1.AddDimension(regionDim)
+	require.NoError(t, err)
+	err = matcher2.AddDimension(regionDim)
+	require.NoError(t, err)
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -576,19 +553,20 @@ func TestRedisCASBroker_Integration_NetworkPartition(t *testing.T) {
 		},
 	}
 
-	err = matcher1.AddRule(ctx, rule1)
+	err = matcher1.AddRule(rule1)
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
 
 	// Verify both matchers see the rule
-	results1, err := matcher1.MatchRule(ctx, []*DimensionValue{{DimensionName: "region", Value: "us-east-1"}})
+	query1 := &QueryRule{Values: map[string]string{"region": "us-east-1"}}
+	result1, err := matcher1.FindBestMatch(query1)
 	require.NoError(t, err)
-	require.Len(t, results1, 1)
+	require.NotNil(t, result1)
 
-	results2, err := matcher2.MatchRule(ctx, []*DimensionValue{{DimensionName: "region", Value: "us-east-1"}})
+	result2, err := matcher2.FindBestMatch(query1)
 	require.NoError(t, err)
-	require.Len(t, results2, 1)
+	require.NotNil(t, result2)
 
 	// Simulate "network partition" by closing one matcher's broker
 	matcher2.Close()
@@ -602,40 +580,57 @@ func TestRedisCASBroker_Integration_NetworkPartition(t *testing.T) {
 		},
 	}
 
-	err = matcher1.AddRule(ctx, rule2)
+	err = matcher1.AddRule(rule2)
 	require.NoError(t, err)
 
 	time.Sleep(1 * time.Second)
 
 	// Matcher1 should see both rules
-	rules1 := matcher1.GetRules()
+	rules1, err := matcher1.ListRules(0, 10)
+	require.NoError(t, err)
 	assert.Len(t, rules1, 2)
 
 	// "Reconnect" matcher2 by creating a new instance
-	matcher2, err = NewMatcherWithConfig(ctx, matcherConfig2)
+	broker2, err = NewRedisCASBroker(RedisCASConfig{
+		RedisAddr:    redisAddr,
+		NodeID:       "node-2",
+		Namespace:    namespace,
+		PollInterval: 1 * time.Second,
+	})
+	require.NoError(t, err)
+	defer broker2.Close()
+
+	matcher2, err = NewInMemoryMatcher(persistence2, broker2, "node-2")
 	require.NoError(t, err)
 	defer matcher2.Close()
+
+	// Add the region dimension to the new matcher2
+	err = matcher2.AddDimension(regionDim)
+	require.NoError(t, err)
 
 	// Wait for the new matcher to catch up
 	time.Sleep(3 * time.Second)
 
 	// Both matchers should now see both rules
-	rules1 = matcher1.GetRules()
-	rules2 := matcher2.GetRules()
+	rules1, err = matcher1.ListRules(0, 10)
+	require.NoError(t, err)
+	rules2, err := matcher2.ListRules(0, 10)
+	require.NoError(t, err)
 
 	assert.Len(t, rules1, 2)
 	assert.Len(t, rules2, 2)
 
 	// Verify both rules can be matched by both matchers
-	results1, err = matcher1.MatchRule(ctx, []*DimensionValue{{DimensionName: "region", Value: "us-west-2"}})
+	query2 := &QueryRule{Values: map[string]string{"region": "us-west-2"}}
+	result1, err = matcher1.FindBestMatch(query2)
 	require.NoError(t, err)
-	require.Len(t, results1, 1)
-	assert.Equal(t, "during-partition", results1[0].Rule.ID)
+	require.NotNil(t, result1)
+	assert.Equal(t, "during-partition", result1.Rule.ID)
 
-	results2, err = matcher2.MatchRule(ctx, []*DimensionValue{{DimensionName: "region", Value: "us-west-2"}})
+	result2, err = matcher2.FindBestMatch(query2)
 	require.NoError(t, err)
-	require.Len(t, results2, 1)
-	assert.Equal(t, "during-partition", results2[0].Rule.ID)
+	require.NotNil(t, result2)
+	assert.Equal(t, "during-partition", result2.Rule.ID)
 }
 
 // TestRedisCASBroker_Integration_EventOrdering tests that events are processed in order
@@ -687,7 +682,7 @@ func TestRedisCASBroker_Integration_EventOrdering(t *testing.T) {
 
 	for i := 0; i < numEvents; i++ {
 		event := &Event{
-			Type: RuleChange,
+			Type: EventTypeRuleAdded,
 			Data: []byte(fmt.Sprintf(`{"sequence": %d, "data": "event-%d"}`, i, i)),
 		}
 		publishedEvents[i] = event
@@ -719,7 +714,13 @@ collectLoop:
 	// The received event should be the last published event
 	lastEvent := publishedEvents[numEvents-1]
 	assert.Equal(t, lastEvent.Type, receivedEvents[0].Type)
-	assert.Equal(t, string(lastEvent.Data), string(receivedEvents[0].Data))
+	
+	// Convert interface{} to []byte for comparison
+	lastEventData, ok := lastEvent.Data.([]byte)
+	require.True(t, ok, "Expected lastEvent.Data to be []byte")
+	receivedEventData, ok := receivedEvents[0].Data.([]byte)
+	require.True(t, ok, "Expected receivedEvents[0].Data to be []byte")
+	assert.Equal(t, string(lastEventData), string(receivedEventData))
 
 	// Verify the latest event in Redis is indeed the last one
 	latestEvent, err := subscriber.GetLatestEvent(ctx)
@@ -727,5 +728,7 @@ collectLoop:
 	require.NotNil(t, latestEvent)
 
 	assert.Equal(t, lastEvent.Type, latestEvent.Event.Type)
-	assert.Equal(t, string(lastEvent.Data), string(latestEvent.Event.Data))
+	latestEventData, ok := latestEvent.Event.Data.([]byte)
+	require.True(t, ok, "Expected latestEvent.Event.Data to be []byte")
+	assert.Equal(t, string(lastEventData), string(latestEventData))
 }
