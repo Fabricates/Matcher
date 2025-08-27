@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"os"
+	"regexp"
 	"testing"
 )
 
@@ -294,5 +295,52 @@ func TestAPIValidateRule(t *testing.T) {
 	err = engine.ValidateRule(rule)
 	if err != nil {
 		t.Errorf("ValidateRule failed for valid rule: %v", err)
+	}
+}
+
+func TestGenerateDefaultNodeID(t *testing.T) {
+	// Test that function is publicly accessible
+	nodeID := GenerateDefaultNodeID()
+	
+	// Check that result is not empty
+	if nodeID == "" {
+		t.Fatal("GenerateDefaultNodeID returned empty string")
+	}
+	
+	// Check format: hostname-6digits
+	pattern := regexp.MustCompile(`^.+-\d{6}$`)
+	if !pattern.MatchString(nodeID) {
+		t.Errorf("NodeID format incorrect. Expected hostname-6digits, got: %s", nodeID)
+	}
+	
+	// Test that it contains hostname
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+	
+	expectedPrefix := hostname + "-"
+	if len(nodeID) < len(expectedPrefix) || nodeID[:len(expectedPrefix)] != expectedPrefix {
+		t.Errorf("NodeID should start with '%s', got: %s", expectedPrefix, nodeID)
+	}
+	
+	// Test that suffix is exactly 6 digits
+	suffix := nodeID[len(expectedPrefix):]
+	if len(suffix) != 6 {
+		t.Errorf("Suffix should be 6 digits, got %d digits: %s", len(suffix), suffix)
+	}
+	
+	// Test that each call generates different IDs (randomness)
+	nodeID2 := GenerateDefaultNodeID()
+	if nodeID == nodeID2 {
+		t.Log("Warning: Two consecutive calls generated the same nodeID. This is unlikely but possible due to randomness.")
+	}
+	
+	// Test multiple calls to ensure format consistency
+	for i := 0; i < 10; i++ {
+		testNodeID := GenerateDefaultNodeID()
+		if !pattern.MatchString(testNodeID) {
+			t.Errorf("Iteration %d: NodeID format incorrect: %s", i, testNodeID)
+		}
 	}
 }
