@@ -21,7 +21,7 @@ func TestMultiTenantBasicFunctionality(t *testing.T) {
 		TenantID:      "tenant1",
 		ApplicationID: "app1",
 	}
-	
+
 	config2 := &DimensionConfig{
 		Name:          "product",
 		Index:         0,
@@ -128,7 +128,7 @@ func TestMultiApplicationFunctionality(t *testing.T) {
 		TenantID:      "tenant1",
 		ApplicationID: "app1",
 	}
-	
+
 	config2 := &DimensionConfig{
 		Name:          "service",
 		Index:         0,
@@ -393,7 +393,7 @@ func TestMultiTenantStats(t *testing.T) {
 	// Each tenant/app combination should have its own forest
 	expectedKeys := []string{
 		"tenant1:app1",
-		"tenant1:app2", 
+		"tenant1:app2",
 		"tenant2:app1",
 	}
 

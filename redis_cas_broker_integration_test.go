@@ -714,7 +714,7 @@ collectLoop:
 	// The received event should be the last published event
 	lastEvent := publishedEvents[numEvents-1]
 	assert.Equal(t, lastEvent.Type, receivedEvents[0].Type)
-	
+
 	// Convert interface{} to []byte for comparison
 	lastEventData, ok := lastEvent.Data.([]byte)
 	require.True(t, ok, "Expected lastEvent.Data to be []byte")
