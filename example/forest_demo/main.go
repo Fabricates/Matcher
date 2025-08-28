@@ -156,7 +156,7 @@ func main() {
 	for i := 0; i < numQueries; i++ {
 		_, err := engine.FindBestMatch(testQuery)
 		if err != nil {
-			slog.Error("Query %d failed: %v", i, err)
+			slog.Error("Query failed", "query_index", i, "error", err)
 		}
 	}
 	elapsed := time.Since(start)
