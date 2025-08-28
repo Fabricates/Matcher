@@ -148,7 +148,7 @@ func main() {
 
 		// Test health
 		if err := kafkaBroker.Health(ctx); err != nil {
-			slog.Error("Kafka broker health check failed: %v", err)
+			slog.Error("Kafka broker health check failed", "error", err)
 		} else {
 			fmt.Println("Kafka broker is healthy")
 
