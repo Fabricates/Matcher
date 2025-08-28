@@ -38,7 +38,7 @@ func isRedisAvailable(addr string) bool {
 	return client.Ping(ctx).Err() == nil
 }
 
-func cleanupRedisKey(t *testing.T, redisAddr, namespace string) {
+func cleanupRedisKey(_ *testing.T, redisAddr, namespace string) {
 	client := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 		DB:   0,

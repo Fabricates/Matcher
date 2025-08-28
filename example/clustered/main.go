@@ -32,7 +32,8 @@ func main() {
 			nodeID,
 		)
 		if err != nil {
-			slog.Error("Failed to create engine", "nodeID", nodeID, "error", err); os.Exit(1)
+			slog.Error("Failed to create engine", "nodeID", nodeID, "error", err)
+			os.Exit(1)
 		}
 
 		engines[i] = engine
@@ -47,7 +48,8 @@ func main() {
 
 		for _, dim := range dimensions {
 			if err := engine.AddDimension(dim); err != nil {
-				slog.Error("Failed to add dimension", "dimension", dim.Name, "nodeID", nodeID, "error", err); os.Exit(1)
+				slog.Error("Failed to add dimension", "dimension", dim.Name, "nodeID", nodeID, "error", err)
+				os.Exit(1)
 			}
 		}
 

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -85,7 +85,7 @@ func main() {
 
 	redisCASBroker, err := matcher.NewRedisCASBroker(redisCASConfig)
 	if err != nil {
-		slog.Error("Failed to create Redis CAS broker: %v", err)
+		slog.Error("Failed to create Redis CAS broker", "error", err)
 	} else {
 		defer redisCASBroker.Close()
 
@@ -171,7 +171,7 @@ func main() {
 			}
 
 			if err := kafkaBroker.Publish(ctx, testEvent); err != nil {
-				slog.Error("Failed to publish event: %v", err)
+				slog.Error("Failed to publish event", "error", err)
 			} else {
 				fmt.Println("Published test event to Kafka")
 			}
@@ -198,7 +198,7 @@ func main() {
 
 	// Subscribe to events
 	if err := memoryBroker.Subscribe(ctx, events); err != nil {
-		slog.Error("Failed to subscribe: %v", err)
+		slog.Error("Failed to subscribe", "error", err)
 	} else {
 		// Publish a test event
 		testEvent := &matcher.Event{
