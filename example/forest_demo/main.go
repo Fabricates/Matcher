@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/Fabricates/Matcher"
@@ -16,7 +17,8 @@ func main() {
 
 	engine, err := matcher.NewMatcherEngine(persistence, nil, "demo-node")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create matcher engine", "error", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -30,7 +32,7 @@ func main() {
 
 	for _, dim := range dimensions {
 		if err := engine.AddDimension(dim); err != nil {
-			log.Fatal(err)
+			slog.Error("Failed to add dimension", "dimension", dim.Name, "error", err)
 		}
 	}
 
@@ -70,7 +72,7 @@ func main() {
 	fmt.Println("\n--- Adding Rules ---")
 	for _, rule := range rules {
 		if err := engine.AddRule(rule); err != nil {
-			log.Printf("Error adding rule %s: %v", rule.ID, err)
+			slog.Error("Error adding rule %s: %v", rule.ID, err)
 			continue
 		}
 		fmt.Printf("Added rule %s\n", rule.ID)
@@ -154,7 +156,7 @@ func main() {
 	for i := 0; i < numQueries; i++ {
 		_, err := engine.FindBestMatch(testQuery)
 		if err != nil {
-			log.Printf("Query %d failed: %v", i, err)
+			slog.Error("Query %d failed: %v", i, err)
 		}
 	}
 	elapsed := time.Since(start)

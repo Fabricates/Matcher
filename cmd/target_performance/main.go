@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -33,7 +34,8 @@ func main() {
 		"target-test",
 	)
 	if err != nil {
-		log.Fatalf("Failed to create matcher: %v", err)
+		slog.Error("Failed to create matcher", "error", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -47,7 +49,8 @@ func main() {
 			Weight:   float64(21 - i), // 20, 19, 18, ... 1
 		}
 		if err := engine.AddDimension(dim); err != nil {
-			log.Fatalf("Failed to add dimension: %v", err)
+			slog.Error("Failed to add dimension", "error", err)
+			os.Exit(1)
 		}
 	}
 	fmt.Println(" ✓")
@@ -59,7 +62,8 @@ func main() {
 	for i := 0; i < 50000; i++ {
 		rule := generateSimpleRule(i)
 		if err := engine.AddRule(rule); err != nil {
-			log.Fatalf("Failed to add rule %d: %v", i, err)
+			slog.Error("Failed to add rule", "rule_id", i, "error", err)
+			os.Exit(1)
 		}
 
 		if i > 0 && i%10000 == 0 {

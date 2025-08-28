@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"runtime"
 	"runtime/debug"
@@ -84,7 +84,7 @@ func main() {
 
 		result, err := runPerformanceBenchmark(config)
 		if err != nil {
-			log.Printf("Error running benchmark %s: %v", config.Name, err)
+			slog.Error("Error running benchmark", "benchmark", config.Name, "error", err)
 			continue
 		}
 

@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	matcher "github.com/Fabricates/Matcher"
@@ -31,7 +32,7 @@ func main() {
 			nodeID,
 		)
 		if err != nil {
-			log.Fatalf("Failed to create engine for %s: %v", nodeID, err)
+			slog.Error("Failed to create engine", "nodeID", nodeID, "error", err); os.Exit(1)
 		}
 
 		engines[i] = engine
@@ -46,7 +47,7 @@ func main() {
 
 		for _, dim := range dimensions {
 			if err := engine.AddDimension(dim); err != nil {
-				log.Fatalf("Failed to add dimension %s for %s: %v", dim.Name, nodeID, err)
+				slog.Error("Failed to add dimension", "dimension", dim.Name, "nodeID", nodeID, "error", err); os.Exit(1)
 			}
 		}
 
@@ -72,7 +73,7 @@ func main() {
 		Build()
 
 	if err := engines[0].AddRule(rule1); err != nil {
-		log.Printf("Failed to add rule to node-1: %v", err)
+		slog.Error("Failed to add rule to node-1", "error", err)
 	} else {
 		fmt.Println("✓ Added rule to node-1")
 	}
@@ -87,7 +88,7 @@ func main() {
 		Build()
 
 	if err := engines[1].AddRule(rule2); err != nil {
-		log.Printf("Failed to add rule to node-2: %v", err)
+		slog.Error("Failed to add rule to node-2", "error", err)
 	} else {
 		fmt.Println("✓ Added rule to node-2")
 	}
@@ -101,7 +102,7 @@ func main() {
 	for i, engine := range engines {
 		rules, err := engine.ListRules(0, 10)
 		if err != nil {
-			log.Printf("Failed to list rules from node-%d: %v", i+1, err)
+			slog.Error("Failed to list rules", "node", i+1, "error", err)
 			continue
 		}
 
@@ -123,7 +124,7 @@ func main() {
 
 	result, err := engines[2].FindBestMatch(query1)
 	if err != nil {
-		log.Printf("Query failed on node-3: %v", err)
+		slog.Error("Query failed on node-3", "error", err)
 	} else if result != nil {
 		fmt.Printf("✓ Node-3 found matching rule: %s (weight: %.1f)\n",
 			result.Rule.ID, result.TotalWeight)
@@ -137,7 +138,7 @@ func main() {
 	rule1.Metadata["update_time"] = time.Now().Format(time.RFC3339)
 
 	if err := engines[2].UpdateRule(rule1); err != nil {
-		log.Printf("Failed to update rule from node-3: %v", err)
+		slog.Error("Failed to update rule from node-3", "error", err)
 	} else {
 		fmt.Println("✓ Updated rule from node-3")
 	}
@@ -167,7 +168,7 @@ func main() {
 
 	// Delete rule from node-2
 	if err := engines[1].DeleteRule("production_rule_1"); err != nil {
-		log.Printf("Failed to delete rule from node-2: %v", err)
+		slog.Error("Failed to delete rule from node-2", "error", err)
 	} else {
 		fmt.Println("✓ Deleted rule from node-2")
 	}
@@ -202,13 +203,13 @@ func main() {
 	fmt.Println("\n=== Cleanup ===")
 	for i, engine := range engines {
 		if err := engine.Close(); err != nil {
-			log.Printf("Failed to close engine %d: %v", i+1, err)
+			slog.Error("Failed to close engine", "index", i+1, "error", err)
 		}
 	}
 
 	for i, broker := range brokers {
 		if err := broker.Close(); err != nil {
-			log.Printf("Failed to close broker %d: %v", i+1, err)
+			slog.Error("Failed to close broker", "index", i+1, "error", err)
 		}
 	}
 
