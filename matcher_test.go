@@ -40,9 +40,9 @@ func TestBasicMatching(t *testing.T) {
 
 	// Add a test rule
 	rule := NewRule("test_rule").
-		Dimension("product", "TestProduct", MatchTypeEqual, 10.0).
-		Dimension("route", "TestRoute", MatchTypeEqual, 5.0).
-		Dimension("tool", "TestTool", MatchTypeEqual, 8.0).
+		DimensionWithWeight("product", "TestProduct", MatchTypeEqual, 10.0).
+		DimensionWithWeight("route", "TestRoute", MatchTypeEqual, 5.0).
+		DimensionWithWeight("tool", "TestTool", MatchTypeEqual, 8.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -85,7 +85,7 @@ func TestPrefixMatching(t *testing.T) {
 
 	// Add prefix rule
 	rule := NewRule("prefix_rule").
-		Dimension("product", "Test", MatchTypePrefix, 10.0).
+		DimensionWithWeight("product", "Test", MatchTypePrefix, 10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -122,7 +122,7 @@ func TestSuffixMatching(t *testing.T) {
 
 	// Add suffix rule
 	rule := NewRule("suffix_rule").
-		Dimension("product", "Product", MatchTypeSuffix, 10.0).
+		DimensionWithWeight("product", "Product", MatchTypeSuffix, 10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -159,7 +159,7 @@ func TestAnyMatching(t *testing.T) {
 
 	// Add any rule (fallback)
 	rule := NewRule("any_rule").
-		Dimension("product", "", MatchTypeAny, 1.0).
+		DimensionWithWeight("product", "", MatchTypeAny, 1.0).
 		ManualWeight(5.0).
 		Build()
 
@@ -201,12 +201,12 @@ func TestWeightPriority(t *testing.T) {
 
 	// Add high weight rule
 	highRule := NewRule("high_weight").
-		Dimension("product", "Test", MatchTypeEqual, 100.0).
+		DimensionWithWeight("product", "Test", MatchTypeEqual, 100.0).
 		Build()
 
 	// Add low weight rule
 	lowRule := NewRule("low_weight").
-		Dimension("product", "Test", MatchTypeEqual, 1.0).
+		DimensionWithWeight("product", "Test", MatchTypeEqual, 1.0).
 		Build()
 
 	err = engine.AddRule(highRule)
@@ -248,12 +248,12 @@ func TestManualWeightOverride(t *testing.T) {
 
 	// Add rule with high calculated weight
 	highCalcRule := NewRule("high_calc").
-		Dimension("product", "Test", MatchTypeEqual, 100.0).
+		DimensionWithWeight("product", "Test", MatchTypeEqual, 100.0).
 		Build()
 
 	// Add rule with low calculated weight but high manual weight
 	highManualRule := NewRule("high_manual").
-		Dimension("product", "Test", MatchTypeEqual, 1.0).
+		DimensionWithWeight("product", "Test", MatchTypeEqual, 1.0).
 		ManualWeight(200.0).
 		Build()
 
@@ -300,7 +300,7 @@ func TestCaching(t *testing.T) {
 
 	// Add test rule
 	rule := NewRule("cache_test").
-		Dimension("product", "CacheTest", MatchTypeEqual, 10.0).
+		DimensionWithWeight("product", "CacheTest", MatchTypeEqual, 10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -354,8 +354,8 @@ func TestPerformance(t *testing.T) {
 	// Add multiple rules for performance testing
 	for i := 0; i < 100; i++ {
 		rule := NewRule(fmt.Sprintf("perf_rule_%d", i)).
-			Dimension("product", fmt.Sprintf("Product%d", i), MatchTypeEqual, 10.0).
-			Dimension("route", fmt.Sprintf("Route%d", i), MatchTypeEqual, 5.0).
+			DimensionWithWeight("product", fmt.Sprintf("Product%d", i), MatchTypeEqual, 10.0).
+			DimensionWithWeight("route", fmt.Sprintf("Route%d", i), MatchTypeEqual, 5.0).
 			Build()
 
 		err = engine.AddRule(rule)
