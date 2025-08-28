@@ -72,7 +72,7 @@ func main() {
 	fmt.Println("\n--- Adding Rules ---")
 	for _, rule := range rules {
 		if err := engine.AddRule(rule); err != nil {
-			slog.Error("Error adding rule %s: %v", rule.ID, err)
+			slog.Error("Error adding rule", "rule_id", rule.ID, "error", err)
 			continue
 		}
 		fmt.Printf("Added rule %s\n", rule.ID)
