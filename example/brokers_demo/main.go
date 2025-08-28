@@ -142,7 +142,7 @@ func main() {
 
 	kafkaBroker, err := matcher.NewKafkaEventBroker(kafkaConfig)
 	if err != nil {
-		slog.Error("Failed to create Kafka broker: %v", err)
+		slog.Error("Failed to create Kafka broker", "error", err)
 	} else {
 		defer kafkaBroker.Close()
 
