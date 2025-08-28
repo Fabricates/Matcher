@@ -336,7 +336,7 @@ func generateRealisticRules(count int, dimensions []*matcher.DimensionConfig) []
 					}
 				}
 
-				ruleBuilder.Dimension(dim.Name, value, matchType, dim.Weight)
+				ruleBuilder.Dimension(dim.Name, value, matchType)
 			}
 		}
 

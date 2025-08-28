@@ -19,8 +19,8 @@ func TestPersistenceSaveRules(t *testing.T) {
 
 	// Create test rules
 	rules := []*Rule{
-		NewRule("save-1").Dimension("region", "us-west", MatchTypeEqual, 1.0).Build(),
-		NewRule("save-2").Dimension("env", "prod", MatchTypeEqual, 1.0).Build(),
+		NewRule("save-1").Dimension("region", "us-west", MatchTypeEqual).Build(),
+		NewRule("save-2").Dimension("env", "prod", MatchTypeEqual).Build(),
 	}
 
 	// Test SaveRules
@@ -151,7 +151,7 @@ func TestDatabasePersistenceOperations(t *testing.T) {
 
 	// Test SaveRules
 	testRules := []*Rule{
-		NewRule("db-test").Dimension("region", "us-west", MatchTypeEqual, 1.0).Build(),
+		NewRule("db-test").Dimension("region", "us-west", MatchTypeEqual).Build(),
 	}
 	if err := persistence.SaveRules(ctx, testRules); err != nil {
 		t.Errorf("SaveRules failed: %v", err)

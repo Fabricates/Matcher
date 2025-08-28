@@ -217,6 +217,11 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Populate weights from dimension configurations
+	if err := m.populateDimensionWeights(rule); err != nil {
+		return fmt.Errorf("failed to populate dimension weights: %w", err)
+	}
+
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
@@ -266,10 +271,35 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	return nil
 }
 
+// populateDimensionWeights populates weights for dimensions from dimension configurations
+func (m *InMemoryMatcher) populateDimensionWeights(rule *Rule) error {
+	for _, dimValue := range rule.Dimensions {
+		// Check if weight is already set (non-zero) - if so, keep it for backward compatibility
+		if dimValue.Weight != 0.0 {
+			continue
+		}
+		
+		// Look up dimension configuration
+		if config, exists := m.dimensionConfigs[dimValue.DimensionName]; exists {
+			dimValue.Weight = config.Weight
+		} else {
+			// If no configuration exists, use a default weight of 1.0
+			// This maintains backward compatibility with flexible mode
+			dimValue.Weight = 1.0
+		}
+	}
+	return nil
+}
+
 // updateRule updates an existing rule
 func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Populate weights from dimension configurations
+	if err := m.populateDimensionWeights(rule); err != nil {
+		return fmt.Errorf("failed to populate dimension weights: %w", err)
+	}
 
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {

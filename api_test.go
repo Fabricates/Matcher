@@ -40,7 +40,7 @@ func TestAPIUpdateRule(t *testing.T) {
 
 	// Add a rule first
 	rule := NewRule("api-update-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 	if err := engine.AddRule(rule); err != nil {
 		t.Fatalf("Failed to add rule: %v", err)
@@ -48,7 +48,7 @@ func TestAPIUpdateRule(t *testing.T) {
 
 	// Update the rule
 	updatedRule := NewRule("api-update-test").
-		Dimension("region", "us-east", MatchTypeEqual, 1.0).
+		Dimension("region", "us-east", MatchTypeEqual).
 		Build()
 	if err := engine.UpdateRule(updatedRule); err != nil {
 		t.Errorf("UpdateRule failed: %v", err)
@@ -70,7 +70,7 @@ func TestAPIDeleteRule(t *testing.T) {
 
 	// Add a rule first
 	rule := NewRule("api-delete-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 	if err := engine.AddRule(rule); err != nil {
 		t.Fatalf("Failed to add rule: %v", err)
@@ -122,7 +122,7 @@ func TestAPIFindBestMatch(t *testing.T) {
 
 	// Add a rule
 	rule := NewRule("best-match-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 	if err := engine.AddRule(rule); err != nil {
 		t.Fatalf("Failed to add rule: %v", err)
@@ -158,7 +158,7 @@ func TestAPIFindAllMatches(t *testing.T) {
 	// Add multiple rules
 	for i := 0; i < 3; i++ {
 		rule := NewRule("all-match-test").
-			Dimension("region", "us-west", MatchTypeEqual, 1.0+float64(i)*0.1). // Different weights
+			Dimension("region", "us-west", MatchTypeEqual).
 			Build()
 		rule.ID = rule.ID + string(rune('a'+i)) // Make unique IDs
 		if err := engine.AddRule(rule); err != nil {
@@ -194,7 +194,7 @@ func TestAPIBatchAddRules(t *testing.T) {
 	var rules []*Rule
 	for i := 0; i < 5; i++ {
 		rule := NewRule("batch-test").
-			Dimension("region", "us-west", MatchTypeEqual, 1.0+float64(i)*0.1). // Different weights
+			Dimension("region", "us-west", MatchTypeEqual).
 			Build()
 		rule.ID = rule.ID + string(rune('a'+i)) // Make unique IDs
 		rules = append(rules, rule)
@@ -289,7 +289,7 @@ func TestAPIValidateRule(t *testing.T) {
 
 	// Validate a good rule
 	rule := NewRule("validate-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 
 	err = engine.ValidateRule(rule)
