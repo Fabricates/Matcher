@@ -209,7 +209,7 @@ func main() {
 		}
 
 		if err := memoryBroker.Publish(ctx, testEvent); err != nil {
-			slog.Error("Failed to publish event: %v", err)
+			slog.Error("Failed to publish event", "error", err)
 		} else {
 			fmt.Println("Published test event to in-memory broker")
 		}
