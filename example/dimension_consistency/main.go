@@ -14,11 +14,13 @@ func main() {
 	// Create a matcher with persistence
 	engine, err := matcher.NewMatcherEngineWithDefaults("./example_data")
 	if err != nil {
-		slog.Error("Failed to create matcher engine", "error", err); os.Exit(1)
+		slog.Error("Failed to create matcher engine", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		if err := engine.Close(); err != nil {
-			slog.Error("Error closing engine", "error", err); os.Exit(1)
+			slog.Error("Error closing engine", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -32,7 +34,8 @@ func main() {
 
 	err = engine.AddRule(rule1)
 	if err != nil {
-		slog.Error("Failed to add flexible rule", "error", err); os.Exit(1)
+		slog.Error("Failed to add flexible rule", "error", err)
+		os.Exit(1)
 	} else {
 		fmt.Println("✅ Added rule with 2 dimensions (product, environment)")
 	}
@@ -45,7 +48,8 @@ func main() {
 
 	err = engine.AddRule(rule2)
 	if err != nil {
-		slog.Error("Failed to add flexible rule", "error", err); os.Exit(1)
+		slog.Error("Failed to add flexible rule", "error", err)
+		os.Exit(1)
 	} else {
 		fmt.Println("✅ Added rule with 3 dimensions (product, region, tier)")
 	}
@@ -60,7 +64,8 @@ func main() {
 		Weight:   10.0,
 	})
 	if err != nil {
-		slog.Error("Failed to add product dimension", "error", err); os.Exit(1)
+		slog.Error("Failed to add product dimension", "error", err)
+		os.Exit(1)
 	}
 
 	err = engine.AddDimension(&matcher.DimensionConfig{
@@ -70,7 +75,8 @@ func main() {
 		Weight:   8.0,
 	})
 	if err != nil {
-		slog.Error("Failed to add environment dimension", "error", err); os.Exit(1)
+		slog.Error("Failed to add environment dimension", "error", err)
+		os.Exit(1)
 	}
 
 	err = engine.AddDimension(&matcher.DimensionConfig{
@@ -80,7 +86,8 @@ func main() {
 		Weight:   5.0,
 	})
 	if err != nil {
-		slog.Error("Failed to add region dimension", "error", err); os.Exit(1)
+		slog.Error("Failed to add region dimension", "error", err)
+		os.Exit(1)
 	}
 
 	fmt.Println("✅ Configured dimensions: product (required), environment (required), region (optional)")

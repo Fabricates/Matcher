@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -14,7 +14,8 @@ func main() {
 	// Create engine with JSON persistence
 	engine, err := matcher.NewMatcherEngineWithDefaults("./demo_data")
 	if err != nil {
-		slog.Error("Failed to create engine", "error", err); os.Exit(1)
+		slog.Error("Failed to create engine", "error", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -63,7 +64,8 @@ func main() {
 
 	resultA, err := engine.FindBestMatch(tenantAQuery)
 	if err != nil {
-		slog.Error("Tenant A query failed: %v", err); os.Exit(1)
+		slog.Error("Tenant A query failed", "error", err)
+		os.Exit(1)
 	}
 	if resultA != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", resultA.Rule.ID, resultA.TotalWeight)
@@ -80,7 +82,8 @@ func main() {
 
 	resultB, err := engine.FindBestMatch(tenantBQuery)
 	if err != nil {
-		slog.Error("Tenant B query failed: %v", err); os.Exit(1)
+		slog.Error("Tenant B query failed", "error", err)
+		os.Exit(1)
 	}
 	if resultB != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", resultB.Rule.ID, resultB.TotalWeight)
@@ -123,7 +126,8 @@ func main() {
 
 	authResult, err := engine.FindBestMatch(authQuery)
 	if err != nil {
-		slog.Error("Auth query failed: %v", err); os.Exit(1)
+		slog.Error("Auth query failed", "error", err)
+		os.Exit(1)
 	}
 	if authResult != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", authResult.Rule.ID, authResult.TotalWeight)
@@ -138,7 +142,8 @@ func main() {
 
 	paymentResult, err := engine.FindBestMatch(paymentQuery)
 	if err != nil {
-		slog.Error("Payment query failed: %v", err); os.Exit(1)
+		slog.Error("Payment query failed", "error", err)
+		os.Exit(1)
 	}
 	if paymentResult != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", paymentResult.Rule.ID, paymentResult.TotalWeight)
@@ -158,7 +163,8 @@ func main() {
 
 	crossResult, err := engine.FindBestMatch(crossTenantQuery)
 	if err != nil {
-		slog.Error("Cross-tenant query failed: %v", err); os.Exit(1)
+		slog.Error("Cross-tenant query failed", "error", err)
+		os.Exit(1)
 	}
 	if crossResult == nil {
 		fmt.Println("✅ Tenant isolation working: Tenant B cannot access Tenant A's rules")
