@@ -47,7 +47,7 @@ func main() {
 	// Add all rules
 	for _, rule := range []*matcher.Rule{tenantARule1, tenantARule2, tenantBRule1, tenantBRule2} {
 		if err := engine.AddRule(rule); err != nil {
-			slog.Error("Failed to add rule %s: %v", rule.ID, err)
+			slog.Error("Failed to add rule", "rule_id", rule.ID, "error", err)
 		}
 		fmt.Printf("✅ Added rule: %s (Tenant: %s, App: %s)\n", rule.ID, rule.TenantID, rule.ApplicationID)
 	}
