@@ -23,7 +23,7 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
   - `MatchTypePrefix`: String starts with pattern (e.g., "Prod" matches "ProductA", "Production")
   - `MatchTypeSuffix`: String ends with pattern (e.g., "_beta" matches "test_beta", "recipe_beta")
   - `MatchTypeAny`: Matches any value (wildcard)
-- **Weighted Scoring**: Automatic and manual weight assignment
+- **Automatic Weight Population**: Weights are automatically populated from dimension configurations - no need to specify weights in rule creation
 - **Dimension Consistency**: Rules must match configured dimensions by default (prevents inconsistent rule structures)
 - **Weight Conflict Detection**: Prevents duplicate rule weights by default for deterministic matching behavior
 
@@ -35,6 +35,45 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - **Health Monitoring**: Comprehensive statistics and health checks
 - **Concurrent Safe**: Thread-safe operations with RWMutex protection
 - **Backward Compatibility**: ForestIndex wrapper maintains compatibility with existing code
+
+## Automatic Weight Population
+
+The rule matching engine now automatically populates dimension weights from dimension configurations, eliminating the need to specify weights when creating rules.
+
+### New Simplified API
+
+```go
+// Configure dimensions with weights
+engine.AddDimension(&matcher.DimensionConfig{
+    Name: "product", Index: 0, Weight: 15.0,
+})
+engine.AddDimension(&matcher.DimensionConfig{
+    Name: "environment", Index: 1, Weight: 8.0,
+})
+
+// Create rules without specifying weights - they're auto-populated!
+rule := matcher.NewRule("auto-weight-rule").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).     // Weight: 15.0 (from config)
+    Dimension("environment", "prod", matcher.MatchTypeEqual).     // Weight: 8.0 (from config)
+    Build()
+```
+
+### Backward Compatibility
+
+For cases where you need explicit weight control, use `DimensionWithWeight()`:
+
+```go
+rule := matcher.NewRule("explicit-weight-rule").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).              // Auto: 15.0 from config
+    DimensionWithWeight("environment", "prod", matcher.MatchTypeEqual, 12.0). // Explicit: 12.0
+    Build()
+```
+
+### Weight Resolution
+
+1. **Configured dimensions**: Use weight from `DimensionConfig.Weight`
+2. **Explicit weights**: Use weight from `DimensionWithWeight()` method
+3. **Unconfigured dimensions**: Default to weight `1.0`
 
 ## Dimension Consistency Validation
 
@@ -67,28 +106,28 @@ engine.AddDimension(&matcher.DimensionConfig{
 ```go
 // ✅ Valid - matches configured dimensions
 validRule := matcher.NewRule("valid").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 8.0).
-    Dimension("region", "us-west", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
+    Dimension("region", "us-west", matcher.MatchTypeEqual).
     Build()
 
 // ✅ Valid - only required dimensions  
 minimalRule := matcher.NewRule("minimal").
-    Dimension("product", "ProductB", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "staging", matcher.MatchTypeEqual, 8.0).
+    Dimension("product", "ProductB", matcher.MatchTypeEqual).
+    Dimension("environment", "staging", matcher.MatchTypeEqual).
     Build()
 
 // ❌ Invalid - missing required dimension
 err := engine.AddRule(matcher.NewRule("invalid").
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 8.0).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
     Build())
 // Error: rule missing required dimension 'product'
 
 // ❌ Invalid - extra dimension not in configuration
 err = engine.AddRule(matcher.NewRule("invalid").
-    Dimension("product", "ProductC", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 8.0).
-    Dimension("unknown_field", "value", matcher.MatchTypeEqual, 3.0).
+    Dimension("product", "ProductC", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
+    Dimension("unknown_field", "value", matcher.MatchTypeEqual).
     Build())
 // Error: rule contains dimensions not in configuration: [unknown_field]
 ```
@@ -109,13 +148,13 @@ engine := matcher.NewMatcherEngineWithDefaults("./data")
 
 // Default: duplicate weights are not allowed
 rule1 := matcher.NewRule("rule1").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
+    DimensionWithWeight("product", "ProductA", matcher.MatchTypeEqual, 10.0).
+    DimensionWithWeight("environment", "production", matcher.MatchTypeEqual, 5.0).
     Build() // Total weight: 15.0
 
 rule2 := matcher.NewRule("rule2").
-    Dimension("product", "ProductB", matcher.MatchTypeEqual, 7.0).
-    Dimension("environment", "staging", matcher.MatchTypeEqual, 8.0).
+    DimensionWithWeight("product", "ProductB", matcher.MatchTypeEqual, 7.0).
+    DimensionWithWeight("environment", "staging", matcher.MatchTypeEqual, 8.0).
     Build() // Total weight: 15.0 (same as rule1)
 
 engine.AddRule(rule1) // ✅ Success
@@ -133,13 +172,13 @@ Weight conflicts are detected based on the total calculated weight:
 ```go
 // Calculated weight: sum of all dimension weights
 rule1 := matcher.NewRule("calculated").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
+    DimensionWithWeight("product", "ProductA", matcher.MatchTypeEqual, 10.0).
+    DimensionWithWeight("route", "main", matcher.MatchTypeEqual, 5.0).
     Build() // Total weight: 15.0
 
 // Manual weight: overrides calculated weight
 rule2 := matcher.NewRule("manual").
-    Dimension("product", "ProductB", matcher.MatchTypeEqual, 20.0).
+    DimensionWithWeight("product", "ProductB", matcher.MatchTypeEqual, 20.0).
     ManualWeight(15.0). // Total weight: 15.0 (conflicts with rule1)
     Build()
 
