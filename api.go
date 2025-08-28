@@ -3,6 +3,7 @@ package matcher
 import (
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -211,7 +212,7 @@ func (me *MatcherEngine) AutoSave(interval time.Duration) chan<- bool {
 			case <-ticker.C:
 				if err := me.Save(); err != nil {
 					// Log error but continue
-					fmt.Printf("Auto-save error: %v\n", err)
+					slog.Error("Auto-save error", "error", err)
 				}
 			case <-stopChan:
 				return

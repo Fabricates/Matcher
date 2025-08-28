@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/Fabricates/Matcher"
 )
@@ -13,7 +14,7 @@ func main() {
 	// Create engine with JSON persistence
 	engine, err := matcher.NewMatcherEngineWithDefaults("./demo_data")
 	if err != nil {
-		log.Fatalf("Failed to create engine: %v", err)
+		slog.Error("Failed to create engine", "error", err); os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -46,7 +47,7 @@ func main() {
 	// Add all rules
 	for _, rule := range []*matcher.Rule{tenantARule1, tenantARule2, tenantBRule1, tenantBRule2} {
 		if err := engine.AddRule(rule); err != nil {
-			log.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+			slog.Error("Failed to add rule %s: %v", rule.ID, err)
 		}
 		fmt.Printf("✅ Added rule: %s (Tenant: %s, App: %s)\n", rule.ID, rule.TenantID, rule.ApplicationID)
 	}
@@ -62,7 +63,7 @@ func main() {
 
 	resultA, err := engine.FindBestMatch(tenantAQuery)
 	if err != nil {
-		log.Fatalf("Tenant A query failed: %v", err)
+		slog.Error("Tenant A query failed: %v", err); os.Exit(1)
 	}
 	if resultA != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", resultA.Rule.ID, resultA.TotalWeight)
@@ -79,7 +80,7 @@ func main() {
 
 	resultB, err := engine.FindBestMatch(tenantBQuery)
 	if err != nil {
-		log.Fatalf("Tenant B query failed: %v", err)
+		slog.Error("Tenant B query failed: %v", err); os.Exit(1)
 	}
 	if resultB != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", resultB.Rule.ID, resultB.TotalWeight)
@@ -106,7 +107,7 @@ func main() {
 
 	for _, rule := range []*matcher.Rule{authRule, paymentRule} {
 		if err := engine.AddRule(rule); err != nil {
-			log.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+			slog.Error("Failed to add rule %s: %v", rule.ID, err)
 		}
 		fmt.Printf("✅ Added rule: %s (Tenant: %s, App: %s)\n", rule.ID, rule.TenantID, rule.ApplicationID)
 	}
@@ -122,7 +123,7 @@ func main() {
 
 	authResult, err := engine.FindBestMatch(authQuery)
 	if err != nil {
-		log.Fatalf("Auth query failed: %v", err)
+		slog.Error("Auth query failed: %v", err); os.Exit(1)
 	}
 	if authResult != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", authResult.Rule.ID, authResult.TotalWeight)
@@ -137,7 +138,7 @@ func main() {
 
 	paymentResult, err := engine.FindBestMatch(paymentQuery)
 	if err != nil {
-		log.Fatalf("Payment query failed: %v", err)
+		slog.Error("Payment query failed: %v", err); os.Exit(1)
 	}
 	if paymentResult != nil {
 		fmt.Printf("   🎯 Match: %s (Weight: %.1f)\n", paymentResult.Rule.ID, paymentResult.TotalWeight)
@@ -157,7 +158,7 @@ func main() {
 
 	crossResult, err := engine.FindBestMatch(crossTenantQuery)
 	if err != nil {
-		log.Fatalf("Cross-tenant query failed: %v", err)
+		slog.Error("Cross-tenant query failed: %v", err); os.Exit(1)
 	}
 	if crossResult == nil {
 		fmt.Println("✅ Tenant isolation working: Tenant B cannot access Tenant A's rules")

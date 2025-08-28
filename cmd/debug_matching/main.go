@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/Fabricates/Matcher"
 )
@@ -17,7 +18,8 @@ func main() {
 		"debug-test",
 	)
 	if err != nil {
-		log.Fatalf("Failed to create matcher: %v", err)
+		slog.Error("Failed to create matcher", "error", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -50,7 +52,8 @@ func main() {
 
 	fmt.Printf("Adding rule: %+v\n", rule)
 	if err := engine.AddRule(rule); err != nil {
-		log.Fatalf("Failed to add rule: %v", err)
+		slog.Error("Failed to add rule", "error", err)
+		os.Exit(1)
 	}
 
 	// Add a rule with MatchTypeAny for partial matching
@@ -62,7 +65,8 @@ func main() {
 
 	fmt.Printf("Adding any rule: %+v\n", rule2)
 	if err := engine.AddRule(rule2); err != nil {
-		log.Fatalf("Failed to add any rule: %v", err)
+		slog.Error("Failed to add any rule", "error", err)
+		os.Exit(1)
 	}
 
 	// Test exact match
@@ -75,7 +79,7 @@ func main() {
 	fmt.Printf("\nTesting exact match query: %+v\n", query1)
 	result1, err := engine.FindBestMatch(query1)
 	if err != nil {
-		log.Printf("Query failed: %v", err)
+		slog.Error("Query failed", "error", err)
 	} else if result1 != nil {
 		fmt.Printf("✅ Found match: %s (weight: %.1f)\n", result1.Rule.ID, result1.TotalWeight)
 	} else {
@@ -92,7 +96,7 @@ func main() {
 	fmt.Printf("\nTesting partial match query: %+v\n", query2)
 	result2, err := engine.FindBestMatch(query2)
 	if err != nil {
-		log.Printf("Query failed: %v", err)
+		slog.Error("Query failed", "error", err)
 	} else if result2 != nil {
 		fmt.Printf("✅ Found partial match: %s (weight: %.1f)\n", result2.Rule.ID, result2.TotalWeight)
 	} else {
@@ -103,7 +107,7 @@ func main() {
 	fmt.Printf("\nTesting all matches for exact query:\n")
 	allMatches, err := engine.FindAllMatches(query1)
 	if err != nil {
-		log.Printf("FindAllMatches failed: %v", err)
+		slog.Error("FindAllMatches failed", "error", err)
 	} else {
 		fmt.Printf("Found %d total matches:\n", len(allMatches))
 		for i, match := range allMatches {

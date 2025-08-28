@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/Fabricates/Matcher"
@@ -14,7 +15,8 @@ func main() {
 	// Create matcher engine with JSON persistence
 	engine, err := matcher.NewMatcherEngineWithDefaults("./data")
 	if err != nil {
-		log.Fatal("Failed to create matcher engine:", err)
+		slog.Error("Failed to create matcher engine", "error", err)
+		os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -31,7 +33,7 @@ func main() {
 
 	for _, dim := range coreDims {
 		if err := engine.AddDimension(dim); err != nil {
-			log.Printf("Failed to add dimension %s: %v", dim.Name, err)
+			slog.Error("Failed to add dimension", "dimension", dim.Name, "error", err)
 		} else {
 			fmt.Printf("  Added dimension: %s (weight: %.1f)\n", dim.Name, dim.Weight)
 		}
@@ -46,7 +48,7 @@ func main() {
 
 	for _, dim := range customDims {
 		if err := engine.AddDimension(dim); err != nil {
-			log.Printf("Failed to add dimension %s: %v", dim.Name, err)
+			slog.Error("Failed to add dimension", "dimension", dim.Name, "error", err)
 		} else {
 			fmt.Printf("  Added dimension: %s (weight: %.1f)\n", dim.Name, dim.Weight)
 		}
@@ -68,7 +70,7 @@ func main() {
 		Build()
 
 	if err := engine.AddRule(rule1); err != nil {
-		log.Printf("Failed to add rule1: %v", err)
+		slog.Error("Failed to add rule1", "error", err)
 	} else {
 		fmt.Println("  ✓ Added production rule (exact matches)")
 	}
@@ -85,7 +87,7 @@ func main() {
 		Build()
 
 	if err := engine.AddRule(rule2); err != nil {
-		log.Printf("Failed to add rule2: %v", err)
+		slog.Error("Failed to add rule2", "error", err)
 	} else {
 		fmt.Println("  ✓ Added prefix matching rule")
 	}
@@ -102,7 +104,7 @@ func main() {
 		Build()
 
 	if err := engine.AddRule(rule3); err != nil {
-		log.Printf("Failed to add rule3: %v", err)
+		slog.Error("Failed to add rule3", "error", err)
 	} else {
 		fmt.Println("  ✓ Added suffix matching rule")
 	}
@@ -119,7 +121,7 @@ func main() {
 		Build()
 
 	if err := engine.AddRule(rule4); err != nil {
-		log.Printf("Failed to add rule4: %v", err)
+		slog.Error("Failed to add rule4", "error", err)
 	} else {
 		fmt.Println("  ✓ Added fallback rule (manual weight)")
 	}
@@ -217,7 +219,7 @@ func main() {
 	for i := 0; i < iterations; i++ {
 		_, err := engine.FindBestMatch(testQuery)
 		if err != nil {
-			log.Printf("Query %d failed: %v", i, err)
+			slog.Error("Query failed", "query_index", i, "error", err)
 		}
 	}
 
@@ -250,7 +252,7 @@ func main() {
 
 	fmt.Println("\n8. Saving data...")
 	if err := engine.Save(); err != nil {
-		log.Printf("Failed to save: %v", err)
+		slog.Error("Failed to save", "error", err)
 	} else {
 		fmt.Println("  ✓ Data saved successfully")
 	}

@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/Fabricates/Matcher"
 )
@@ -14,7 +15,7 @@ func main() {
 	persistence := matcher.NewJSONPersistence("./data")
 	engine, err := matcher.NewMatcherEngine(persistence, nil, "weight-demo")
 	if err != nil {
-		log.Fatalf("Failed to create engine: %v", err)
+		slog.Error("Failed to create engine", "error", err); os.Exit(1)
 	}
 	defer engine.Close()
 
@@ -28,7 +29,7 @@ func main() {
 		Build()
 
 	if err := engine.AddRule(rule1); err != nil {
-		log.Printf("Failed to add rule1: %v", err)
+		slog.Error("Failed to add rule1", "error", err); os.Exit(1)
 	} else {
 		fmt.Printf("✅ Added rule1 with total weight: %.2f\n", rule1.CalculateTotalWeight())
 	}
@@ -122,7 +123,7 @@ func main() {
 
 	result, err := engine.FindBestMatch(query)
 	if err != nil {
-		log.Printf("Query failed: %v", err)
+		slog.Error("Query failed: %v", err); os.Exit(1)
 	} else if result != nil {
 		fmt.Printf("🎯 Best match: %s (weight: %.2f, description: %s)\n",
 			result.Rule.ID, result.TotalWeight, result.Rule.Metadata["description"])
@@ -133,7 +134,7 @@ func main() {
 	// Find all matches
 	allMatches, err := engine.FindAllMatches(query)
 	if err != nil {
-		log.Printf("FindAllMatches failed: %v", err)
+		slog.Error("FindAllMatches failed: %v", err); os.Exit(1)
 	} else {
 		fmt.Printf("\n📋 All matches (%d found):\n", len(allMatches))
 		for i, match := range allMatches {

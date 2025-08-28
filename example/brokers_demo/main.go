@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/Fabricates/Matcher"
@@ -26,13 +26,13 @@ func main() {
 
 	redisBroker, err := matcher.NewRedisEventBroker(redisConfig)
 	if err != nil {
-		log.Printf("Failed to create Redis broker: %v", err)
+		slog.Error("Failed to create Redis broker: %v", err)
 	} else {
 		defer redisBroker.Close()
 
 		// Test health
 		if err := redisBroker.Health(ctx); err != nil {
-			log.Printf("Redis broker health check failed: %v", err)
+			slog.Error("Redis broker health check failed: %v", err)
 		} else {
 			fmt.Println("Redis broker is healthy")
 
@@ -42,7 +42,7 @@ func main() {
 			// Subscribe to events
 			go func() {
 				if err := redisBroker.Subscribe(ctx, events); err != nil {
-					log.Printf("Failed to subscribe: %v", err)
+					slog.Error("Failed to subscribe: %v", err)
 				}
 			}()
 
@@ -55,7 +55,7 @@ func main() {
 			}
 
 			if err := redisBroker.Publish(ctx, testEvent); err != nil {
-				log.Printf("Failed to publish event: %v", err)
+				slog.Error("Failed to publish event: %v", err)
 			} else {
 				fmt.Println("Published test event to Redis")
 			}
@@ -85,13 +85,13 @@ func main() {
 
 	redisCASBroker, err := matcher.NewRedisCASBroker(redisCASConfig)
 	if err != nil {
-		log.Printf("Failed to create Redis CAS broker: %v", err)
+		slog.Error("Failed to create Redis CAS broker: %v", err)
 	} else {
 		defer redisCASBroker.Close()
 
 		// Test health
 		if err := redisCASBroker.Health(ctx); err != nil {
-			log.Printf("Redis CAS broker health check failed: %v", err)
+			slog.Error("Redis CAS broker health check failed: %v", err)
 		} else {
 			fmt.Println("Redis CAS broker is healthy")
 
@@ -101,7 +101,7 @@ func main() {
 			// Subscribe to events
 			go func() {
 				if err := redisCASBroker.Subscribe(ctx, events); err != nil {
-					log.Printf("Failed to subscribe: %v", err)
+					slog.Error("Failed to subscribe: %v", err)
 				}
 			}()
 
@@ -114,7 +114,7 @@ func main() {
 			}
 
 			if err := redisCASBroker.Publish(ctx, testEvent); err != nil {
-				log.Printf("Failed to publish event: %v", err)
+				slog.Error("Failed to publish event: %v", err)
 			} else {
 				fmt.Println("Published test event to Redis CAS")
 			}
@@ -142,13 +142,13 @@ func main() {
 
 	kafkaBroker, err := matcher.NewKafkaEventBroker(kafkaConfig)
 	if err != nil {
-		log.Printf("Failed to create Kafka broker: %v", err)
+		slog.Error("Failed to create Kafka broker: %v", err)
 	} else {
 		defer kafkaBroker.Close()
 
 		// Test health
 		if err := kafkaBroker.Health(ctx); err != nil {
-			log.Printf("Kafka broker health check failed: %v", err)
+			slog.Error("Kafka broker health check failed: %v", err)
 		} else {
 			fmt.Println("Kafka broker is healthy")
 
@@ -158,7 +158,7 @@ func main() {
 			// Subscribe to events
 			go func() {
 				if err := kafkaBroker.Subscribe(ctx, events); err != nil {
-					log.Printf("Failed to subscribe: %v", err)
+					slog.Error("Failed to subscribe: %v", err)
 				}
 			}()
 
@@ -171,7 +171,7 @@ func main() {
 			}
 
 			if err := kafkaBroker.Publish(ctx, testEvent); err != nil {
-				log.Printf("Failed to publish event: %v", err)
+				slog.Error("Failed to publish event: %v", err)
 			} else {
 				fmt.Println("Published test event to Kafka")
 			}
@@ -198,7 +198,7 @@ func main() {
 
 	// Subscribe to events
 	if err := memoryBroker.Subscribe(ctx, events); err != nil {
-		log.Printf("Failed to subscribe: %v", err)
+		slog.Error("Failed to subscribe: %v", err)
 	} else {
 		// Publish a test event
 		testEvent := &matcher.Event{
@@ -209,7 +209,7 @@ func main() {
 		}
 
 		if err := memoryBroker.Publish(ctx, testEvent); err != nil {
-			log.Printf("Failed to publish event: %v", err)
+			slog.Error("Failed to publish event: %v", err)
 		} else {
 			fmt.Println("Published test event to in-memory broker")
 		}
