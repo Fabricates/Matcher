@@ -158,7 +158,7 @@ func main() {
 			// Subscribe to events
 			go func() {
 				if err := kafkaBroker.Subscribe(ctx, events); err != nil {
-					slog.Error("Failed to subscribe: %v", err)
+					slog.Error("Failed to subscribe", "error", err)
 				}
 			}()
 
