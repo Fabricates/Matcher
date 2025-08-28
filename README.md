@@ -395,7 +395,7 @@ engine.AddDimension(customDim)
 // Use in rules
 rule := matcher.NewRule("regional_rule").
     Product("ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("region", "us-west", matcher.MatchTypeEqual, 15.0).
+    Dimension("region", "us-west", matcher.MatchTypeEqual).
     Build()
 ```
 
@@ -406,15 +406,15 @@ When no dimensions are configured in the system, rules can have different number
 ```go
 // Without configured dimensions - flexible rule depths
 shortRule := matcher.NewRule("short").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
     Build()
 
 longRule := matcher.NewRule("long").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
-    Dimension("tool", "laser", matcher.MatchTypeEqual, 8.0).
-    Dimension("tool_id", "LASER_001", matcher.MatchTypeEqual, 3.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
+    Dimension("tool", "laser", matcher.MatchTypeEqual).
+    Dimension("tool_id", "LASER_001", matcher.MatchTypeEqual).
     Build()
 
 // With configured dimensions - consistent rule structure required
@@ -427,13 +427,13 @@ engine.AddDimension(&matcher.DimensionConfig{
 
 // Now all rules must conform to these dimensions
 validRule := matcher.NewRule("valid").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
     Build() // ✅ Valid - matches configured dimensions
 
 invalidRule := matcher.NewRule("invalid").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("unknown_dim", "value", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("unknown_dim", "value", matcher.MatchTypeEqual).
     Build() // ❌ Invalid - unknown_dim not in configuration
 ```
 
@@ -444,14 +444,14 @@ Rules support status management to differentiate between working (production) ru
 ```go
 // Create a working rule (default status)
 workingRule := matcher.NewRule("prod-rule").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
     Build() // Status defaults to RuleStatusWorking
 
 // Create a draft rule explicitly
 draftRule := matcher.NewRule("draft-rule").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual, 20.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
     Status(matcher.RuleStatusDraft).
     Build()
 
@@ -526,13 +526,13 @@ The engine supports complete tenant and application isolation, enabling secure m
 ```go
 // Create rules for different tenants
 tenant1Rule := matcher.NewRuleWithTenant("rule1", "tenant1", "app1").
-    Dimension("service", "auth", matcher.MatchTypeEqual, 10.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Dimension("service", "auth", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
     Build()
 
 tenant2Rule := matcher.NewRuleWithTenant("rule2", "tenant2", "app1").
-    Dimension("service", "auth", matcher.MatchTypeEqual, 15.0).
-    Dimension("environment", "prod", matcher.MatchTypeEqual, 5.0).
+    Dimension("service", "auth", matcher.MatchTypeEqual).
+    Dimension("environment", "prod", matcher.MatchTypeEqual).
     Build()
 
 engine.AddRule(tenant1Rule)

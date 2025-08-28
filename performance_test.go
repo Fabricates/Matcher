@@ -209,7 +209,6 @@ func generateDimensions(count int) []*DimensionConfig {
 // generateRules creates test rules with realistic distribution
 func generateRules(count int, dimensions []*DimensionConfig) []*Rule {
 	rules := make([]*Rule, count)
-	rand.Seed(time.Now().UnixNano())
 
 	// Value pools for realistic data
 	valuePools := map[string][]string{
@@ -275,7 +274,6 @@ func generateRules(count int, dimensions []*DimensionConfig) []*Rule {
 // generateQueries creates test queries with realistic patterns
 func generateQueries(count int, dimensions []*DimensionConfig) []*QueryRule {
 	queries := make([]*QueryRule, count)
-	rand.Seed(time.Now().UnixNano() + 1000)
 
 	// Value pools matching rule generation
 	valuePools := map[string][]string{

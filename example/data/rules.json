@@ -5,37 +5,33 @@
       {
         "dimension_name": "product",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "route",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "tool",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "tool_id",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "recipe",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       }
     ],
     "manual_weight": 1,
-    "created_at": "2025-08-25T15:14:24.862890634Z",
-    "updated_at": "2025-08-25T15:14:24.862892788Z",
+    "status": "working",
+    "created_at": "2025-08-28T07:14:51.362543463-04:00",
+    "updated_at": "2025-08-28T07:14:51.36254542-04:00",
     "metadata": {
       "description": "Fallback rule for unmatched queries"
     }
@@ -46,54 +42,47 @@
       {
         "dimension_name": "product",
         "value": "ProductA",
-        "match_type": 0,
-        "weight": 10
+        "match_type": 0
       },
       {
         "dimension_name": "route",
         "value": "main",
-        "match_type": 0,
-        "weight": 5
+        "match_type": 0
       },
       {
         "dimension_name": "tool",
         "value": "laser",
-        "match_type": 0,
-        "weight": 8
+        "match_type": 0
       },
       {
         "dimension_name": "tool_id",
         "value": "LASER_001",
-        "match_type": 0,
-        "weight": 3
+        "match_type": 0
       },
       {
         "dimension_name": "recipe",
         "value": "recipe_alpha",
-        "match_type": 0,
-        "weight": 12
+        "match_type": 0
       },
       {
         "dimension_name": "region",
         "value": "us-west",
-        "match_type": 0,
-        "weight": 7
+        "match_type": 0
       },
       {
         "dimension_name": "priority",
         "value": "high",
-        "match_type": 0,
-        "weight": 15
+        "match_type": 0
       },
       {
         "dimension_name": "environment",
         "value": "production",
-        "match_type": 0,
-        "weight": 5
+        "match_type": 0
       }
     ],
-    "created_at": "2025-08-25T15:14:24.862851801Z",
-    "updated_at": "2025-08-25T15:14:24.862855629Z",
+    "status": "working",
+    "created_at": "2025-08-28T07:14:51.362480774-04:00",
+    "updated_at": "2025-08-28T07:14:51.362485625-04:00",
     "metadata": {
       "description": "High-priority production rule"
     }
@@ -104,42 +93,37 @@
       {
         "dimension_name": "product",
         "value": "Prod",
-        "match_type": 2,
-        "weight": 8
+        "match_type": 2
       },
       {
         "dimension_name": "route",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "tool",
         "value": "laser",
-        "match_type": 2,
-        "weight": 6
+        "match_type": 2
       },
       {
         "dimension_name": "tool_id",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "recipe",
         "value": "recipe",
-        "match_type": 2,
-        "weight": 10
+        "match_type": 2
       },
       {
         "dimension_name": "environment",
         "value": "dev",
-        "match_type": 0,
-        "weight": 5
+        "match_type": 0
       }
     ],
-    "created_at": "2025-08-25T15:14:24.862865958Z",
-    "updated_at": "2025-08-25T15:14:24.862867691Z",
+    "status": "working",
+    "created_at": "2025-08-28T07:14:51.362505821-04:00",
+    "updated_at": "2025-08-28T07:14:51.362508186-04:00",
     "metadata": {
       "description": "Development prefix matching rule"
     }
@@ -150,42 +134,37 @@
       {
         "dimension_name": "product",
         "value": "ProductB",
-        "match_type": 0,
-        "weight": 8
+        "match_type": 0
       },
       {
         "dimension_name": "route",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "tool",
         "value": "",
-        "match_type": 1,
-        "weight": 0
+        "match_type": 1
       },
       {
         "dimension_name": "tool_id",
         "value": "_001",
-        "match_type": 3,
-        "weight": 6
+        "match_type": 3
       },
       {
         "dimension_name": "recipe",
         "value": "_beta",
-        "match_type": 3,
-        "weight": 10
+        "match_type": 3
       },
       {
         "dimension_name": "priority",
         "value": "medium",
-        "match_type": 0,
-        "weight": 15
+        "match_type": 0
       }
     ],
-    "created_at": "2025-08-25T15:14:24.862879283Z",
-    "updated_at": "2025-08-25T15:14:24.862881016Z",
+    "status": "working",
+    "created_at": "2025-08-28T07:14:51.36252493-04:00",
+    "updated_at": "2025-08-28T07:14:51.362526987-04:00",
     "metadata": {
       "description": "Suffix matching rule for beta recipes"
     }

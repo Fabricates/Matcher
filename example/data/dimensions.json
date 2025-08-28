@@ -1,15 +1,21 @@
 [
   {
-    "name": "recipe",
-    "index": 4,
-    "required": false,
-    "weight": 12
-  },
-  {
     "name": "priority",
     "index": 6,
     "required": false,
     "weight": 15
+  },
+  {
+    "name": "environment",
+    "index": 7,
+    "required": false,
+    "weight": 5
+  },
+  {
+    "name": "recipe",
+    "index": 4,
+    "required": false,
+    "weight": 12
   },
   {
     "name": "product",
@@ -34,12 +40,6 @@
     "index": 5,
     "required": false,
     "weight": 7
-  },
-  {
-    "name": "environment",
-    "index": 7,
-    "required": false,
-    "weight": 5
   },
   {
     "name": "tool_id",

@@ -6,14 +6,19 @@ import (
 )
 
 func TestForestWeightOrdering(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs to control weights
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region": {Name: "region", Index: 0, Weight: 10.0},
+		"env":    {Name: "env", Index: 1, Weight: 5.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules with different weights
 	rule1 := &Rule{
 		ID: "rule1-low",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 5.0},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual, Weight: 3.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
@@ -21,20 +26,24 @@ func TestForestWeightOrdering(t *testing.T) {
 	rule2 := &Rule{
 		ID: "rule2-high",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 10.0},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual, Weight: 5.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
-		Status: RuleStatusWorking,
+		Status:       RuleStatusWorking,
+		ManualWeight: new(float64), // Manual weight override
 	}
+	*rule2.ManualWeight = 20.0 // Higher than rule1's calculated weight (15.0)
 
 	rule3 := &Rule{
 		ID: "rule3-medium",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 7.0},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual, Weight: 3.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
-		Status: RuleStatusWorking,
+		Status:       RuleStatusWorking,
+		ManualWeight: new(float64), // Manual weight override
 	}
+	*rule3.ManualWeight = 17.5 // Medium weight
 
 	// Add rules in random order
 	forest.AddRule(rule1) // Weight: 8.0
@@ -59,9 +68,9 @@ func TestForestWeightOrdering(t *testing.T) {
 
 	// Verify weight ordering (highest weight first)
 	if len(candidates) >= 3 {
-		weight0 := candidates[0].CalculateTotalWeight()
-		weight1 := candidates[1].CalculateTotalWeight()
-		weight2 := candidates[2].CalculateTotalWeight()
+		weight0 := candidates[0].CalculateTotalWeight(dimensionConfigs)
+		weight1 := candidates[1].CalculateTotalWeight(dimensionConfigs)
+		weight2 := candidates[2].CalculateTotalWeight(dimensionConfigs)
 
 		t.Logf("Rule order: %s (%.1f), %s (%.1f), %s (%.1f)",
 			candidates[0].ID, weight0,
@@ -87,13 +96,16 @@ func TestForestWeightOrdering(t *testing.T) {
 }
 
 func TestForestStatusFiltering(t *testing.T) {
-	forest := CreateForestIndex()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region": {Name: "region", Index: 0, Weight: 10.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create working and draft rules
 	workingRule := &Rule{
 		ID: "working-rule",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 10.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
@@ -101,10 +113,12 @@ func TestForestStatusFiltering(t *testing.T) {
 	draftRule := &Rule{
 		ID: "draft-rule",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 15.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
-		Status: RuleStatusDraft,
+		Status:       RuleStatusDraft,
+		ManualWeight: new(float64), // Give draft rule higher weight for testing
 	}
+	*draftRule.ManualWeight = 15.0 // Higher than working rule's 10.0
 
 	forest.AddRule(workingRule)
 	forest.AddRule(draftRule)
@@ -155,14 +169,17 @@ func TestForestStatusFiltering(t *testing.T) {
 }
 
 func TestForestNoDuplicateChecks(t *testing.T) {
-	forest := CreateForestIndex()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region": {Name: "region", Index: 0, Weight: 10.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create rules that would be duplicates if we were checking for them
 	// But the optimization assumes rules are unique within branches
 	rule1 := &Rule{
 		ID: "rule1",
 		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: 10.0},
+			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
@@ -193,7 +210,10 @@ func TestForestNoDuplicateChecks(t *testing.T) {
 }
 
 func TestForestOptimizationEfficiency(t *testing.T) {
-	forest := CreateForestIndex()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region": {Name: "region", Index: 0, Weight: 1.0}, // Base weight, rules will use manual weights
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create multiple rules with different weights
 	weights := []float64{5.0, 20.0, 10.0, 15.0, 25.0, 8.0}
@@ -204,10 +224,12 @@ func TestForestOptimizationEfficiency(t *testing.T) {
 		rule := &Rule{
 			ID: fmt.Sprintf("rule-%.0f", weight),
 			Dimensions: []*DimensionValue{
-				{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual, Weight: weight},
+				{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 			},
-			Status: RuleStatusWorking,
+			Status:       RuleStatusWorking,
+			ManualWeight: new(float64), // Use manual weight for testing
 		}
+		*rule.ManualWeight = weight
 		forest.AddRule(rule)
 		t.Logf("Added rule with weight %.0f", weight)
 	}
@@ -232,13 +254,13 @@ func TestForestOptimizationEfficiency(t *testing.T) {
 		if candidate.ID != expectedID {
 			t.Errorf("Position %d: expected %s, got %s", i, expectedID, candidate.ID)
 		}
-		t.Logf("Position %d: %s (weight %.0f)", i, candidate.ID, candidate.CalculateTotalWeight())
+		t.Logf("Position %d: %s (weight %.0f)", i, candidate.ID, candidate.CalculateTotalWeight(dimensionConfigs))
 	}
 
 	// Verify weights are actually in descending order
 	for i := 1; i < len(candidates); i++ {
-		prevWeight := candidates[i-1].CalculateTotalWeight()
-		currWeight := candidates[i].CalculateTotalWeight()
+		prevWeight := candidates[i-1].CalculateTotalWeight(dimensionConfigs)
+		currWeight := candidates[i].CalculateTotalWeight(dimensionConfigs)
 		if prevWeight < currWeight {
 			t.Errorf("Weight ordering broken at position %d: %.0f < %.0f", i, prevWeight, currWeight)
 		}

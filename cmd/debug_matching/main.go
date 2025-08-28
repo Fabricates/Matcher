@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -45,9 +45,9 @@ func main() {
 
 	// Add a simple test rule
 	rule := matcher.NewRule("test_rule").
-		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
-		Dimension("region", "us-west", matcher.MatchTypeEqual, 3.0).
+		Dimension("product", "ProductA", matcher.MatchTypeEqual).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
+		Dimension("region", "us-west", matcher.MatchTypeEqual).
 		Build()
 
 	fmt.Printf("Adding rule: %+v\n", rule)
@@ -58,9 +58,9 @@ func main() {
 
 	// Add a rule with MatchTypeAny for partial matching
 	rule2 := matcher.NewRule("any_rule").
-		Dimension("product", "ProductB", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "staging", matcher.MatchTypeEqual, 5.0).
-		Dimension("region", "", matcher.MatchTypeAny, 3.0).
+		Dimension("product", "ProductB", matcher.MatchTypeEqual).
+		Dimension("environment", "staging", matcher.MatchTypeEqual).
+		Dimension("region", "", matcher.MatchTypeAny).
 		Build()
 
 	fmt.Printf("Adding any rule: %+v\n", rule2)

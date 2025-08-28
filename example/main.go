@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -58,14 +58,14 @@ func main() {
 
 	// Rule 1: Exact match rule for production environment
 	rule1 := matcher.NewRule("production_rule").
-		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-		Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
-		Dimension("tool", "laser", matcher.MatchTypeEqual, 8.0).
-		Dimension("tool_id", "LASER_001", matcher.MatchTypeEqual, 3.0).
-		Dimension("recipe", "recipe_alpha", matcher.MatchTypeEqual, 12.0).
-		Dimension("region", "us-west", matcher.MatchTypeEqual, 7.0).
-		Dimension("priority", "high", matcher.MatchTypeEqual, 15.0).
-		Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
+		Dimension("product", "ProductA", matcher.MatchTypeEqual).
+		Dimension("route", "main", matcher.MatchTypeEqual).
+		Dimension("tool", "laser", matcher.MatchTypeEqual).
+		Dimension("tool_id", "LASER_001", matcher.MatchTypeEqual).
+		Dimension("recipe", "recipe_alpha", matcher.MatchTypeEqual).
+		Dimension("region", "us-west", matcher.MatchTypeEqual).
+		Dimension("priority", "high", matcher.MatchTypeEqual).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
 		Metadata("description", "High-priority production rule").
 		Build()
 
@@ -77,12 +77,12 @@ func main() {
 
 	// Rule 2: Prefix matching rule
 	rule2 := matcher.NewRule("prefix_rule").
-		Dimension("product", "Prod", matcher.MatchTypePrefix, 8.0).   // Matches "Prod*"
-		Dimension("route", "", matcher.MatchTypeAny, 0.0).            // Matches any route
-		Dimension("tool", "laser", matcher.MatchTypePrefix, 6.0).     // Matches "laser*"
-		Dimension("tool_id", "", matcher.MatchTypeAny, 0.0).          // Matches any tool ID
-		Dimension("recipe", "recipe", matcher.MatchTypePrefix, 10.0). // Matches "recipe*"
-		Dimension("environment", "dev", matcher.MatchTypeEqual, 5.0).
+		Dimension("product", "Prod", matcher.MatchTypePrefix).  // Matches "Prod*"
+		Dimension("route", "", matcher.MatchTypeAny).           // Matches any route
+		Dimension("tool", "laser", matcher.MatchTypePrefix).    // Matches "laser*"
+		Dimension("tool_id", "", matcher.MatchTypeAny).         // Matches any tool ID
+		Dimension("recipe", "recipe", matcher.MatchTypePrefix). // Matches "recipe*"
+		Dimension("environment", "dev", matcher.MatchTypeEqual).
 		Metadata("description", "Development prefix matching rule").
 		Build()
 
@@ -94,12 +94,12 @@ func main() {
 
 	// Rule 3: Suffix matching rule
 	rule3 := matcher.NewRule("suffix_rule").
-		Dimension("product", "ProductB", matcher.MatchTypeEqual, 8.0).
-		Dimension("route", "", matcher.MatchTypeAny, 0.0).
-		Dimension("tool", "", matcher.MatchTypeAny, 0.0).
-		Dimension("tool_id", "_001", matcher.MatchTypeSuffix, 6.0).  // Matches "*_001"
-		Dimension("recipe", "_beta", matcher.MatchTypeSuffix, 10.0). // Matches "*_beta"
-		Dimension("priority", "medium", matcher.MatchTypeEqual, 15.0).
+		Dimension("product", "ProductB", matcher.MatchTypeEqual).
+		Dimension("route", "", matcher.MatchTypeAny).
+		Dimension("tool", "", matcher.MatchTypeAny).
+		Dimension("tool_id", "_001", matcher.MatchTypeSuffix). // Matches "*_001"
+		Dimension("recipe", "_beta", matcher.MatchTypeSuffix). // Matches "*_beta"
+		Dimension("priority", "medium", matcher.MatchTypeEqual).
 		Metadata("description", "Suffix matching rule for beta recipes").
 		Build()
 
@@ -111,11 +111,11 @@ func main() {
 
 	// Rule 4: Fallback rule with manual weight
 	rule4 := matcher.NewRule("fallback_rule").
-		Dimension("product", "", matcher.MatchTypeAny, 0.0).
-		Dimension("route", "", matcher.MatchTypeAny, 0.0).
-		Dimension("tool", "", matcher.MatchTypeAny, 0.0).
-		Dimension("tool_id", "", matcher.MatchTypeAny, 0.0).
-		Dimension("recipe", "", matcher.MatchTypeAny, 0.0).
+		Dimension("product", "", matcher.MatchTypeAny).
+		Dimension("route", "", matcher.MatchTypeAny).
+		Dimension("tool", "", matcher.MatchTypeAny).
+		Dimension("tool_id", "", matcher.MatchTypeAny).
+		Dimension("recipe", "", matcher.MatchTypeAny).
 		ManualWeight(1.0). // Low manual weight as fallback
 		Metadata("description", "Fallback rule for unmatched queries").
 		Build()

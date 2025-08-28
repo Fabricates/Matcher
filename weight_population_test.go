@@ -49,20 +49,14 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 	if productDim == nil {
 		t.Fatal("Product dimension not found")
 	}
-	if productDim.Weight != 15.0 {
-		t.Errorf("Expected product weight 15.0, got %.1f", productDim.Weight)
-	}
 
 	environmentDim := rule.GetDimensionValue("environment")
 	if environmentDim == nil {
 		t.Fatal("Environment dimension not found")
 	}
-	if environmentDim.Weight != 8.0 {
-		t.Errorf("Expected environment weight 8.0, got %.1f", environmentDim.Weight)
-	}
 
 	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight()
+	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
 	expectedWeight := 15.0 + 8.0
 	if totalWeight != expectedWeight {
 		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
@@ -95,20 +89,14 @@ func TestDefaultWeightWhenNoDimensionConfig(t *testing.T) {
 	if productDim == nil {
 		t.Fatal("Product dimension not found")
 	}
-	if productDim.Weight != 1.0 {
-		t.Errorf("Expected default weight 1.0, got %.1f", productDim.Weight)
-	}
 
 	environmentDim := rule.GetDimensionValue("environment")
 	if environmentDim == nil {
 		t.Fatal("Environment dimension not found")
 	}
-	if environmentDim.Weight != 1.0 {
-		t.Errorf("Expected default weight 1.0, got %.1f", environmentDim.Weight)
-	}
 
 	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight()
+	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
 	expectedWeight := 1.0 + 1.0
 	if totalWeight != expectedWeight {
 		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
@@ -145,8 +133,9 @@ func TestDimensionWithWeightBackwardCompatibility(t *testing.T) {
 
 	// Create a rule using the backward compatibility method with explicit weights
 	rule := NewRule("test-backward-compat").
-		DimensionWithWeight("product", "ProductA", MatchTypeEqual, 25.0). // Override the configured weight
-		Dimension("environment", "prod", MatchTypeEqual).                  // Use configured weight
+		Dimension("product", "ProductA", MatchTypeEqual). // Override the configured weight
+		Dimension("environment", "prod", MatchTypeEqual). // Use configured weight
+		ManualWeight(25.0).
 		Build()
 
 	// Add the rule
@@ -160,16 +149,10 @@ func TestDimensionWithWeightBackwardCompatibility(t *testing.T) {
 	if productDim == nil {
 		t.Fatal("Product dimension not found")
 	}
-	if productDim.Weight != 25.0 {
-		t.Errorf("Expected explicit weight 25.0, got %.1f", productDim.Weight)
-	}
 
 	// Verify the auto-populated weight for environment (from config)
 	environmentDim := rule.GetDimensionValue("environment")
 	if environmentDim == nil {
 		t.Fatal("Environment dimension not found")
-	}
-	if environmentDim.Weight != 5.0 { // Should be from config
-		t.Errorf("Expected configured weight 5.0, got %.1f", environmentDim.Weight)
 	}
 }
