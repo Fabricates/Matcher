@@ -82,7 +82,21 @@ func (rb *RuleBuilder) Application(applicationID string) *RuleBuilder {
 }
 
 // Dimension adds a dimension to the rule being built
-func (rb *RuleBuilder) Dimension(name, value string, matchType MatchType, weight float64) *RuleBuilder {
+// The weight will be automatically populated from dimension configuration when the rule is added to the engine
+func (rb *RuleBuilder) Dimension(name, value string, matchType MatchType) *RuleBuilder {
+	dimValue := &DimensionValue{
+		DimensionName: name,
+		Value:         value,
+		MatchType:     matchType,
+		Weight:        0.0, // Will be populated from dimension config during AddRule
+	}
+	rb.rule.Dimensions = append(rb.rule.Dimensions, dimValue)
+	return rb
+}
+
+// DimensionWithWeight adds a dimension to the rule being built with explicit weight
+// This method is provided for backward compatibility and advanced use cases where you want to override the configured weight
+func (rb *RuleBuilder) DimensionWithWeight(name, value string, matchType MatchType, weight float64) *RuleBuilder {
 	dimValue := &DimensionValue{
 		DimensionName: name,
 		Value:         value,
@@ -240,11 +254,13 @@ func (me *MatcherEngine) AddSimpleRule(id string, dimensions map[string]string, 
 	builder := NewRule(id)
 
 	for dimName, value := range dimensions {
-		weight := 1.0 // default weight
 		if w, exists := weights[dimName]; exists {
-			weight = w
+			// Use explicit weight if provided (for backward compatibility)
+			builder.DimensionWithWeight(dimName, value, MatchTypeEqual, w)
+		} else {
+			// Use configured weight from dimension config
+			builder.Dimension(dimName, value, MatchTypeEqual)
 		}
-		builder.Dimension(dimName, value, MatchTypeEqual, weight)
 	}
 
 	if manualWeight != nil {
@@ -260,7 +276,7 @@ func (me *MatcherEngine) AddAnyRule(id string, dimensionNames []string, manualWe
 	builder := NewRule(id)
 
 	for _, dimName := range dimensionNames {
-		builder.Dimension(dimName, "", MatchTypeAny, 0.0)
+		builder.Dimension(dimName, "", MatchTypeAny)
 	}
 
 	builder.ManualWeight(manualWeight)

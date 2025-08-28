@@ -70,7 +70,7 @@ func TestSimpleCoverageBoosters(t *testing.T) {
 
 	// Test types methods
 	rule := NewRule("test-rule").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 
 	// Cover GetDimensionValue

@@ -262,7 +262,7 @@ func generateRules(count int, dimensions []*DimensionConfig) []*Rule {
 					matchType = MatchTypeEqual
 				}
 
-				ruleBuilder.Dimension(dim.Name, value, matchType, dim.Weight)
+				ruleBuilder.Dimension(dim.Name, value, matchType)
 			}
 		}
 

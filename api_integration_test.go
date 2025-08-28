@@ -9,7 +9,7 @@ import (
 func TestRuleBuilderMetadataIntegration(t *testing.T) {
 	// Integration test for rule builder with metadata functionality
 	rule := NewRule("metadata-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Metadata("key1", "value1").
 		Metadata("key2", "value2").
 		Build()
@@ -84,7 +84,7 @@ func TestMatcherEngineFullAPIIntegration(t *testing.T) {
 
 	// Add a rule and test RebuildIndex
 	rule := NewRule("rebuild-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 	if err := engine.AddRule(rule); err != nil {
 		t.Errorf("Failed to add rule: %v", err)
@@ -208,7 +208,7 @@ func TestForestAPIIntegration(t *testing.T) {
 func TestTypesAPIIntegration(t *testing.T) {
 	// Integration test for Types API methods
 	rule := NewRule("types-test").
-		Dimension("region", "us-west", MatchTypeEqual, 1.0).
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 
 	// Test GetDimensionValue
