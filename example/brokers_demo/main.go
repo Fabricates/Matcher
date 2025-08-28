@@ -91,7 +91,7 @@ func main() {
 
 		// Test health
 		if err := redisCASBroker.Health(ctx); err != nil {
-			slog.Error("Redis CAS broker health check failed: %v", err)
+			slog.Error("Redis CAS broker health check failed", "error", err)
 		} else {
 			fmt.Println("Redis CAS broker is healthy")
 
