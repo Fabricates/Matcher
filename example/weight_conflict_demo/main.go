@@ -134,7 +134,7 @@ func main() {
 	// Find all matches
 	allMatches, err := engine.FindAllMatches(query)
 	if err != nil {
-		slog.Error("FindAllMatches failed: %v", err); os.Exit(1)
+		slog.Error("FindAllMatches failed", "error", err); os.Exit(1)
 	} else {
 		fmt.Printf("\n📋 All matches (%d found):\n", len(allMatches))
 		for i, match := range allMatches {
