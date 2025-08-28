@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -42,12 +42,12 @@ func main() {
 	// Configure 20 dimensions
 	fmt.Print("Configuring 20 dimensions...")
 	for i := 0; i < 20; i++ {
-		dim := &matcher.DimensionConfig{
-			Name:     fmt.Sprintf("dim_%02d", i),
-			Index:    i,
-			Required: i < 3,           // First 3 required
-			Weight:   float64(21 - i), // 20, 19, 18, ... 1
-		}
+		dim := matcher.NewDimensionConfig(
+			fmt.Sprintf("dim_%02d", i),
+			i,
+			i < 3,         // First 3 required
+			float64(21-i), // 20, 19, 18, ... 1
+		)
 		if err := engine.AddDimension(dim); err != nil {
 			slog.Error("Failed to add dimension", "error", err)
 			os.Exit(1)

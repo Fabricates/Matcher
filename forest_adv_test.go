@@ -7,9 +7,9 @@ import (
 func TestRuleForestDimensionOrder(t *testing.T) {
 	// Define dimension order
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": {Name: "product", Index: 0, Weight: 10.0},
-		"region":  {Name: "region", Index: 1, Weight: 5.0},
-		"env":     {Name: "env", Index: 2, Weight: 3.0},
+		"product": NewDimensionConfig("product", 0, false, 10.0),
+		"region":  NewDimensionConfig("region", 1, false, 5.0),
+		"env":     NewDimensionConfig("env", 2, false, 3.0),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -121,9 +121,9 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 func TestRuleForestDimensionTraversal(t *testing.T) {
 	// Test that the forest properly traverses dimensions level by level
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": {Name: "product", Index: 0, Weight: 8.0},
-		"region":  {Name: "region", Index: 1, Weight: 6.0},
-		"env":     {Name: "env", Index: 2, Weight: 4.0},
+		"product": NewDimensionConfig("product", 0, false, 8.0),
+		"region":  NewDimensionConfig("region", 1, false, 6.0),
+		"env":     NewDimensionConfig("env", 2, false, 4.0),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -182,10 +182,10 @@ func TestRuleForestDimensionTraversal(t *testing.T) {
 }
 
 func TestRuleForestSharedPaths(t *testing.T) {
-	// Test that rules can share paths appropriately
+	// Test that the forest can handle shared paths between different rules
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": {Name: "product", Index: 0, Weight: 12.0},
-		"region":  {Name: "region", Index: 1, Weight: 7.0},
+		"product": NewDimensionConfig("product", 0, false, 12.0),
+		"region":  NewDimensionConfig("region", 1, false, 7.0),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 

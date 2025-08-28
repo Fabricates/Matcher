@@ -24,24 +24,9 @@ func main() {
 	defer engine.Close()
 
 	// Configure 3 simple dimensions
-	engine.AddDimension(&matcher.DimensionConfig{
-		Name:     "product",
-		Index:    0,
-		Required: true,
-		Weight:   10.0,
-	})
-	engine.AddDimension(&matcher.DimensionConfig{
-		Name:     "environment",
-		Index:    1,
-		Required: true,
-		Weight:   5.0,
-	})
-	engine.AddDimension(&matcher.DimensionConfig{
-		Name:     "region",
-		Index:    2,
-		Required: false,
-		Weight:   3.0,
-	})
+	engine.AddDimension(matcher.NewDimensionConfig("product", 0, true, 10.0))
+	engine.AddDimension(matcher.NewDimensionConfig("environment", 1, true, 5.0))
+	engine.AddDimension(matcher.NewDimensionConfig("region", 2, false, 3.0))
 
 	// Add a simple test rule
 	rule := matcher.NewRule("test_rule").

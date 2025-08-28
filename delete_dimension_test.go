@@ -13,12 +13,7 @@ func TestDeleteDimensionCoverage(t *testing.T) {
 	defer engine.Close()
 
 	// Add a dimension first
-	dimConfig := &DimensionConfig{
-		Name:     "test_dim_delete",
-		Index:    0,
-		Required: false,
-		Weight:   5.0,
-	}
+	dimConfig := NewDimensionConfig("test_dim_delete", 0, false, 5.0)
 	err = engine.AddDimension(dimConfig)
 	if err != nil {
 		t.Fatalf("Failed to add dimension: %v", err)

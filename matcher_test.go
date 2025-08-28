@@ -9,11 +9,11 @@ import (
 // Helper function to add test dimensions for backward compatibility
 func addTestDimensions(engine *InMemoryMatcher) error {
 	dimensions := []*DimensionConfig{
-		{Name: "product", Index: 0, Required: true, Weight: 10.0},
-		{Name: "route", Index: 1, Required: false, Weight: 5.0},
-		{Name: "tool", Index: 2, Required: false, Weight: 8.0},
-		{Name: "tool_id", Index: 3, Required: false, Weight: 3.0},
-		{Name: "recipe", Index: 4, Required: false, Weight: 12.0},
+		NewDimensionConfig("product", 0, true, 10.0),
+		NewDimensionConfig("route", 1, false, 5.0),
+		NewDimensionConfig("tool", 2, false, 8.0),
+		NewDimensionConfig("tool_id", 3, false, 3.0),
+		NewDimensionConfig("recipe", 4, false, 12.0),
 	}
 
 	for _, dim := range dimensions {
@@ -417,12 +417,7 @@ func TestDynamicDimensions(t *testing.T) {
 	}
 
 	// Add custom dimension
-	customDim := &DimensionConfig{
-		Name:     "custom_dimension",
-		Index:    5,
-		Required: false,
-		Weight:   20.0,
-	}
+	customDim := NewDimensionConfig("custom_dimension", 5, false, 20.0)
 
 	err = engine.AddDimension(customDim)
 	if err != nil {
@@ -529,22 +524,12 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 	}
 
 	// Test 2: Configure dimensions
-	err = engine.AddDimension(&DimensionConfig{
-		Name:     "product",
-		Index:    0,
-		Required: true,
-		Weight:   10.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(&DimensionConfig{
-		Name:     "route",
-		Index:    1,
-		Required: false,
-		Weight:   5.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("route", 1, false, 5.0))
 	if err != nil {
 		t.Fatalf("Failed to add route dimension: %v", err)
 	}

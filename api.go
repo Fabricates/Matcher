@@ -302,6 +302,47 @@ func CreateQueryWithAllRulesAndTenant(tenantID, applicationID string, values map
 	}
 }
 
+// CreateQueryWithDynamicConfigs creates a query with custom dimension configurations
+// This allows for dynamic weight adjustment per query without modifying the global configs
+func CreateQueryWithDynamicConfigs(values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+	return &QueryRule{
+		Values:                  values,
+		IncludeAllRules:         false,
+		DynamicDimensionConfigs: dynamicConfigs,
+	}
+}
+
+// CreateQueryWithTenantAndDynamicConfigs creates a tenant-scoped query with custom dimension configurations
+func CreateQueryWithTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+	return &QueryRule{
+		TenantID:                tenantID,
+		ApplicationID:           applicationID,
+		Values:                  values,
+		IncludeAllRules:         false,
+		DynamicDimensionConfigs: dynamicConfigs,
+	}
+}
+
+// CreateQueryWithAllRulesAndDynamicConfigs creates a query that includes all rules and uses custom dimension configurations
+func CreateQueryWithAllRulesAndDynamicConfigs(values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+	return &QueryRule{
+		Values:                  values,
+		IncludeAllRules:         true,
+		DynamicDimensionConfigs: dynamicConfigs,
+	}
+}
+
+// CreateQueryWithAllRulesTenantAndDynamicConfigs creates a comprehensive query with all options
+func CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+	return &QueryRule{
+		TenantID:                tenantID,
+		ApplicationID:           applicationID,
+		Values:                  values,
+		IncludeAllRules:         true,
+		DynamicDimensionConfigs: dynamicConfigs,
+	}
+}
+
 // GetForestStats returns detailed forest index statistics
 func (me *MatcherEngine) GetForestStats() map[string]interface{} {
 	me.matcher.mu.RLock()

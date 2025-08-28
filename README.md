@@ -43,13 +43,17 @@ The rule matching engine now automatically populates dimension weights from dime
 ### New Simplified API
 
 ```go
-// Configure dimensions with weights
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "product", Index: 0, Weight: 15.0,
-})
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "environment", Index: 1, Weight: 8.0,
-})
+// Configure dimensions with weights for different match types
+engine.AddDimension(NewDimensionConfig("product", 0, true, 15.0))
+engine.AddDimension(NewDimensionConfig("environment", 1, false, 8.0))
+
+// Or create with specific weights per match type
+productConfig := NewDimensionConfigWithWeights("product", 0, true, map[MatchType]float64{
+    MatchTypeEqual:  15.0,
+    MatchTypePrefix: 10.0,
+    MatchTypeSuffix: 8.0,
+}, 5.0) // default weight for undefined match types
+engine.AddDimension(productConfig)
 
 // Create rules without specifying weights - they're auto-populated!
 rule := matcher.NewRule("auto-weight-rule").
@@ -90,15 +94,9 @@ By default, the system enforces consistent rule structures once dimensions are c
 engine := matcher.NewMatcherEngineWithDefaults("./data")
 
 // Configure dimensions first
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "product", Index: 0, Required: true, Weight: 10.0,
-})
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "environment", Index: 1, Required: true, Weight: 8.0,
-})
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "region", Index: 2, Required: false, Weight: 5.0,
-})
+engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
+engine.AddDimension(NewDimensionConfig("environment", 1, true, 8.0))
+engine.AddDimension(NewDimensionConfig("region", 2, false, 5.0))
 ```
 
 ### Rule Validation
@@ -384,12 +382,7 @@ result, err := engine.FindBestMatch(partialQuery)
 
 ```go
 // Add custom dimension
-customDim := &matcher.DimensionConfig{
-    Name:     "region",
-    Index:    5,           // Position in dimension order
-    Required: false,       // Optional dimension
-    Weight:   15.0,       // Default weight
-}
+customDim := NewDimensionConfig("region", 5, false, 15.0)
 engine.AddDimension(customDim)
 
 // Use in rules
@@ -418,12 +411,8 @@ longRule := matcher.NewRule("long").
     Build()
 
 // With configured dimensions - consistent rule structure required
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "product", Index: 0, Required: true, Weight: 10.0,
-})
-engine.AddDimension(&matcher.DimensionConfig{
-    Name: "route", Index: 1, Required: false, Weight: 5.0,
-})
+engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
+engine.AddDimension(NewDimensionConfig("route", 1, false, 5.0))
 
 // Now all rules must conform to these dimensions
 validRule := matcher.NewRule("valid").
