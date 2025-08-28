@@ -309,10 +309,13 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 		return candidateRules
 	}
 
+	// Resolve dimension configs once for this query
+	dimensionConfigs := rf.resolveDimensionConfigs(query)
+
 	// Process each tree type to find matching rules
 	for matchType, trees := range rf.Trees {
 		for _, tree := range trees {
-			rf.searchTree(tree, query, 0, matchType, &candidateRules)
+			rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
 		}
 	}
 
@@ -343,7 +346,8 @@ func (rf *RuleForest) FindCandidateRules(queryValues interface{}) []RuleWithWeig
 }
 
 // searchTree searches a single tree for matching rules (optimized with slice and status filtering)
-func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules *[]RuleWithWeight) {
+// searchTree recursively searches through a SharedNode tree to find candidate rules
+func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules *[]RuleWithWeight, dimensionConfigs map[string]*DimensionConfig) {
 	if node == nil {
 		return
 	}
@@ -399,7 +403,7 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 		// For partial queries, check if all specified query dimensions match the rule
 		if rf.ruleMatchesPartialQuery(rule, query) {
 			// Insert rule in weight-ordered position (highest weight at front)
-			rf.insertRuleByWeight(candidateRules, rule)
+			rf.insertRuleByWeight(candidateRules, rule, dimensionConfigs)
 		}
 	}
 	node.mu.RUnlock()
@@ -410,23 +414,43 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 		// If query specifies this dimension, search all branches
 		for branchMatchType, branch := range node.Branches {
 			for _, child := range branch.Children {
-				rf.searchTree(child, query, depth+1, branchMatchType, candidateRules)
+				rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
 			}
 		}
 	} else {
 		// If query doesn't specify this dimension, only search MatchTypeAny branches
 		if branch, exists := node.Branches[MatchTypeAny]; exists {
 			for _, child := range branch.Children {
-				rf.searchTree(child, query, depth+1, MatchTypeAny, candidateRules)
+				rf.searchTree(child, query, depth+1, MatchTypeAny, candidateRules, dimensionConfigs)
 			}
 		}
 	}
 	node.mu.RUnlock()
 }
 
+// resolveDimensionConfigs merges dynamic configs with initialized configs for a query
+func (rf *RuleForest) resolveDimensionConfigs(query *QueryRule) map[string]*DimensionConfig {
+	if len(query.DynamicDimensionConfigs) == 0 {
+		return rf.DimensionConfigs
+	}
+
+	// Create a copy of the original configs
+	resolvedConfigs := make(map[string]*DimensionConfig)
+	for k, v := range rf.DimensionConfigs {
+		resolvedConfigs[k] = v
+	}
+
+	// Override with dynamic configs
+	for k, v := range query.DynamicDimensionConfigs {
+		resolvedConfigs[k] = v
+	}
+
+	return resolvedConfigs
+}
+
 // insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
-func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRule *Rule) {
-	newWeight := newRule.CalculateTotalWeight(rf.DimensionConfigs)
+func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRule *Rule, dimensionConfigs map[string]*DimensionConfig) {
+	newWeight := newRule.CalculateTotalWeight(dimensionConfigs)
 
 	// If slice is empty or new rule has highest weight, insert at front
 	if len(*candidateRules) == 0 {
@@ -443,7 +467,7 @@ func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRu
 	// Find the right position to maintain weight order
 	insertPos := len(*candidateRules)
 	for i, rule := range *candidateRules {
-		if newWeight > rule.CalculateTotalWeight(rf.DimensionConfigs) {
+		if newWeight > rule.CalculateTotalWeight(dimensionConfigs) {
 			insertPos = i
 			break
 		}

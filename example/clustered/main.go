@@ -40,10 +40,10 @@ func main() {
 
 		// Add dimensions
 		dimensions := []*matcher.DimensionConfig{
-			{Name: "product", Index: 0, Required: true, Weight: 10.0},
-			{Name: "route", Index: 1, Required: false, Weight: 5.0},
-			{Name: "tool", Index: 2, Required: false, Weight: 8.0},
-			{Name: "recipe", Index: 3, Required: false, Weight: 12.0},
+			matcher.NewDimensionConfig("product", 0, true, 10.0),
+			matcher.NewDimensionConfig("route", 1, false, 5.0),
+			matcher.NewDimensionConfig("tool", 2, false, 8.0),
+			matcher.NewDimensionConfig("recipe", 3, false, 12.0),
 		}
 
 		for _, dim := range dimensions {

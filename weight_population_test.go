@@ -14,20 +14,12 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension configurations with specific weights
-	err = engine.AddDimension(&DimensionConfig{
-		Name:   "product",
-		Index:  0,
-		Weight: 15.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("product", 0, false, 15.0))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(&DimensionConfig{
-		Name:   "environment",
-		Index:  1,
-		Weight: 8.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("environment", 1, false, 8.0))
 	if err != nil {
 		t.Fatalf("Failed to add environment dimension: %v", err)
 	}
@@ -113,20 +105,12 @@ func TestDimensionWithWeightBackwardCompatibility(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension configurations with specific weights
-	err = engine.AddDimension(&DimensionConfig{
-		Name:   "product",
-		Index:  0,
-		Weight: 15.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("product", 0, false, 15.0))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(&DimensionConfig{
-		Name:   "environment",
-		Index:  1,
-		Weight: 5.0,
-	})
+	err = engine.AddDimension(NewDimensionConfig("environment", 1, false, 5.0))
 	if err != nil {
 		t.Fatalf("Failed to add environment dimension: %v", err)
 	}

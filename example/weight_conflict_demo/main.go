@@ -22,8 +22,8 @@ func main() {
 
 	// Add dimension configurations with weights
 	dimensionConfigs := []*matcher.DimensionConfig{
-		{Name: "product", Index: 0, Required: true, Weight: 10.0},
-		{Name: "environment", Index: 1, Required: false, Weight: 5.0},
+		matcher.NewDimensionConfig("product", 0, true, 10.0),
+		matcher.NewDimensionConfig("environment", 1, false, 5.0),
 	}
 
 	for _, config := range dimensionConfigs {

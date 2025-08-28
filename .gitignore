@@ -42,3 +42,4 @@ test_output.txt
 test_*/
 **/*.bak
 **/*_demo
+**/fix_*.sh

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 type SystemMetrics struct {
@@ -271,12 +271,12 @@ func generateRealisticDimensions(count int) []*matcher.DimensionConfig {
 			name = fmt.Sprintf("%s_%d", name, i/len(dimensionNames))
 		}
 
-		dimensions[i] = &matcher.DimensionConfig{
-			Name:     name,
-			Index:    i,
-			Required: i < 3,                  // First 3 dimensions required
-			Weight:   float64(20 - (i % 20)), // Weights from 20 down to 1, cycling if needed
-		}
+		dimensions[i] = matcher.NewDimensionConfig(
+			name,
+			i,
+			i < 3,              // First 3 dimensions required
+			float64(20-(i%20)), // Weights from 20 down to 1, cycling if needed
+		)
 	}
 	return dimensions
 }

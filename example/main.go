@@ -24,33 +24,33 @@ func main() {
 
 	// Add core dimensions
 	coreDims := []*matcher.DimensionConfig{
-		{Name: "product", Index: 0, Required: true, Weight: 10.0},
-		{Name: "route", Index: 1, Required: false, Weight: 5.0},
-		{Name: "tool", Index: 2, Required: false, Weight: 8.0},
-		{Name: "tool_id", Index: 3, Required: false, Weight: 3.0},
-		{Name: "recipe", Index: 4, Required: false, Weight: 12.0},
+		matcher.NewDimensionConfig("product", 0, true, 10.0),
+		matcher.NewDimensionConfig("route", 1, false, 5.0),
+		matcher.NewDimensionConfig("tool", 2, false, 8.0),
+		matcher.NewDimensionConfig("tool_id", 3, false, 3.0),
+		matcher.NewDimensionConfig("recipe", 4, false, 12.0),
 	}
 
 	for _, dim := range coreDims {
 		if err := engine.AddDimension(dim); err != nil {
 			slog.Error("Failed to add dimension", "dimension", dim.Name, "error", err)
 		} else {
-			fmt.Printf("  Added dimension: %s (weight: %.1f)\n", dim.Name, dim.Weight)
+			fmt.Printf("  Added dimension: %s (default weight: %.1f)\n", dim.Name, dim.DefaultWeight)
 		}
 	}
 
 	// Add custom dimensions
 	customDims := []*matcher.DimensionConfig{
-		{Name: "region", Index: 5, Required: false, Weight: 7.0},
-		{Name: "priority", Index: 6, Required: false, Weight: 15.0},
-		{Name: "environment", Index: 7, Required: false, Weight: 5.0},
+		matcher.NewDimensionConfig("region", 5, false, 7.0),
+		matcher.NewDimensionConfig("priority", 6, false, 15.0),
+		matcher.NewDimensionConfig("environment", 7, false, 5.0),
 	}
 
 	for _, dim := range customDims {
 		if err := engine.AddDimension(dim); err != nil {
 			slog.Error("Failed to add dimension", "dimension", dim.Name, "error", err)
 		} else {
-			fmt.Printf("  Added dimension: %s (weight: %.1f)\n", dim.Name, dim.Weight)
+			fmt.Printf("  Added dimension: %s (default weight: %.1f)\n", dim.Name, dim.DefaultWeight)
 		}
 	}
 

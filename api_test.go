@@ -96,12 +96,7 @@ func TestAPIAddDimension(t *testing.T) {
 	defer engine.Close()
 
 	// Add a dimension
-	dim := &DimensionConfig{
-		Name:     "api-test-dim",
-		Index:    100,
-		Required: false,
-		Weight:   1.0,
-	}
+	dim := NewDimensionConfig("api-test-dim", 100, false, 1.0)
 	if err := engine.AddDimension(dim); err != nil {
 		t.Errorf("AddDimension failed: %v", err)
 	}
@@ -156,11 +151,7 @@ func TestAPIFindAllMatches(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension config to control weights
-	config := &DimensionConfig{
-		Name:   "region",
-		Index:  0,
-		Weight: 5.0,
-	}
+	config := NewDimensionConfig("region", 0, false, 5.0)
 	if err := engine.AddDimension(config); err != nil {
 		t.Fatalf("Failed to add dimension config: %v", err)
 	}
@@ -204,11 +195,7 @@ func TestAPIBatchAddRules(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension config to control weights
-	config := &DimensionConfig{
-		Name:   "region",
-		Index:  0,
-		Weight: 3.0,
-	}
+	config := NewDimensionConfig("region", 0, false, 3.0)
 	if err := engine.AddDimension(config); err != nil {
 		t.Fatalf("Failed to add dimension config: %v", err)
 	}

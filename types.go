@@ -38,14 +38,53 @@ func (mt MatchType) String() string {
 	}
 }
 
+// NewDimensionConfig creates a DimensionConfig with a default weight for all match types
+func NewDimensionConfig(name string, index int, required bool, defaultWeight float64) *DimensionConfig {
+	return &DimensionConfig{
+		Name:          name,
+		Index:         index,
+		Required:      required,
+		Weights:       make(map[MatchType]float64),
+		DefaultWeight: defaultWeight,
+	}
+}
+
+// NewDimensionConfigWithWeights creates a DimensionConfig with specific weights per match type
+func NewDimensionConfigWithWeights(name string, index int, required bool, weights map[MatchType]float64, defaultWeight float64) *DimensionConfig {
+	return &DimensionConfig{
+		Name:          name,
+		Index:         index,
+		Required:      required,
+		Weights:       weights,
+		DefaultWeight: defaultWeight,
+	}
+}
+
+// SetWeight sets the weight for a specific match type
+func (dc *DimensionConfig) SetWeight(matchType MatchType, weight float64) {
+	if dc.Weights == nil {
+		dc.Weights = make(map[MatchType]float64)
+	}
+	dc.Weights[matchType] = weight
+}
+
+// GetWeight returns the weight for a specific match type, falling back to default weight
+func (dc *DimensionConfig) GetWeight(matchType MatchType) float64 {
+	if weight, exists := dc.Weights[matchType]; exists {
+		return weight
+	}
+	return dc.DefaultWeight
+}
+
 // DimensionConfig defines the configuration for a dimension
 type DimensionConfig struct {
-	Name          string  `json:"name"`
-	Index         int     `json:"index"`                    // Order of this dimension
-	Required      bool    `json:"required"`                 // Whether this dimension is required for matching
-	Weight        float64 `json:"weight"`                   // Default weight for this dimension
-	TenantID      string  `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
-	ApplicationID string  `json:"application_id,omitempty"` // Application identifier for multi-application support
+	Name          string                `json:"name"`
+	Index         int                   `json:"index"`                    // Order of this dimension
+	Required      bool                  `json:"required"`                 // Whether this dimension is required for matching
+	Weights       map[MatchType]float64 `json:"weights"`                  // Weights for each match type
+	DefaultWeight float64               `json:"default_weight"`           // Fallback weight for undefined match types
+	TenantID      string                `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
+	ApplicationID string                `json:"application_id,omitempty"` // Application identifier for multi-application support
 }
 
 // DimensionValue represents a value for a specific dimension in a rule
@@ -76,10 +115,11 @@ type RuleWithWeight struct {
 
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
-	TenantID        string            `json:"tenant_id,omitempty"`      // Tenant identifier for scoped queries
-	ApplicationID   string            `json:"application_id,omitempty"` // Application identifier for scoped queries
-	Values          map[string]string `json:"values"`                   // dimension_name -> value
-	IncludeAllRules bool              `json:"include_all_rules"`        // When true, includes draft rules in search; defaults to false (working rules only)
+	TenantID                string                      `json:"tenant_id,omitempty"`                 // Tenant identifier for scoped queries
+	ApplicationID           string                      `json:"application_id,omitempty"`            // Application identifier for scoped queries
+	Values                  map[string]string           `json:"values"`                              // dimension_name -> value
+	IncludeAllRules         bool                        `json:"include_all_rules"`                   // When true, includes draft rules in search; defaults to false (working rules only)
+	DynamicDimensionConfigs map[string]*DimensionConfig `json:"dynamic_dimension_configs,omitempty"` // Optional: Override dimension configs for this query
 }
 
 // MatchResult represents the result of a rule matching operation
@@ -179,7 +219,13 @@ func (r *Rule) CalculateTotalWeight(dimensionConfigs map[string]*DimensionConfig
 	total := 0.0
 	for _, dim := range r.Dimensions {
 		if config, exists := dimensionConfigs[dim.DimensionName]; exists {
-			total += config.Weight
+			// Try to get the weight for the specific match type
+			if weight, hasWeight := config.Weights[dim.MatchType]; hasWeight {
+				total += weight
+			} else {
+				// Fall back to default weight if match type not configured
+				total += config.DefaultWeight
+			}
 		} else {
 			// If no configuration exists, use a default weight of 1.0
 			total += 1.0
