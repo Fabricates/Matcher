@@ -18,7 +18,7 @@ func main() {
 	}
 	defer func() {
 		if err := engine.Close(); err != nil {
-			slog.Error("Error closing engine: %v", err); os.Exit(1)
+			slog.Error("Error closing engine", "error", err); os.Exit(1)
 		}
 	}()
 
