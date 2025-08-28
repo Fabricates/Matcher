@@ -25,24 +25,24 @@ func main() {
 
 	// Add rules for Tenant A (e-commerce company)
 	tenantARule1 := matcher.NewRuleWithTenant("product_premium", "tenant_a", "ecommerce").
-		Dimension("product_type", "premium", matcher.MatchTypeEqual, 10.0).
-		Dimension("customer_tier", "gold", matcher.MatchTypeEqual, 5.0).
+		Dimension("product_type", "premium", matcher.MatchTypeEqual).
+		Dimension("customer_tier", "gold", matcher.MatchTypeEqual).
 		Build()
 
 	tenantARule2 := matcher.NewRuleWithTenant("product_standard", "tenant_a", "ecommerce").
-		Dimension("product_type", "standard", matcher.MatchTypeEqual, 8.0).
-		Dimension("customer_tier", "silver", matcher.MatchTypeEqual, 3.0).
+		Dimension("product_type", "standard", matcher.MatchTypeEqual).
+		Dimension("customer_tier", "silver", matcher.MatchTypeEqual).
 		Build()
 
 	// Add rules for Tenant B (logistics company) - same dimension names, different context
 	tenantBRule1 := matcher.NewRuleWithTenant("route_express", "tenant_b", "logistics").
-		Dimension("product_type", "express", matcher.MatchTypeEqual, 15.0).
-		Dimension("customer_tier", "premium", matcher.MatchTypeEqual, 8.0).
+		Dimension("product_type", "express", matcher.MatchTypeEqual).
+		Dimension("customer_tier", "premium", matcher.MatchTypeEqual).
 		Build()
 
 	tenantBRule2 := matcher.NewRuleWithTenant("route_standard", "tenant_b", "logistics").
-		Dimension("product_type", "standard", matcher.MatchTypeEqual, 10.0).
-		Dimension("customer_tier", "basic", matcher.MatchTypeEqual, 2.0).
+		Dimension("product_type", "standard", matcher.MatchTypeEqual).
+		Dimension("customer_tier", "basic", matcher.MatchTypeEqual).
 		Build()
 
 	// Add all rules
@@ -99,13 +99,13 @@ func main() {
 
 	// Add rules for different applications within tenant_c
 	authRule := matcher.NewRuleWithTenant("auth_rule", "tenant_c", "auth_service").
-		Dimension("endpoint", "/login", matcher.MatchTypeEqual, 10.0).
-		Dimension("method", "POST", matcher.MatchTypeEqual, 5.0).
+		Dimension("endpoint", "/login", matcher.MatchTypeEqual).
+		Dimension("method", "POST", matcher.MatchTypeEqual).
 		Build()
 
 	paymentRule := matcher.NewRuleWithTenant("payment_rule", "tenant_c", "payment_service").
-		Dimension("endpoint", "/charge", matcher.MatchTypeEqual, 12.0).
-		Dimension("method", "POST", matcher.MatchTypeEqual, 5.0).
+		Dimension("endpoint", "/charge", matcher.MatchTypeEqual).
+		Dimension("method", "POST", matcher.MatchTypeEqual).
 		Build()
 
 	for _, rule := range []*matcher.Rule{authRule, paymentRule} {

@@ -42,15 +42,15 @@ ForestIndexes: map[string]*ForestIndex
 ```go
 // Create a rule for a specific tenant and application
 rule := NewRuleWithTenant("rule1", "tenant1", "app1").
-    Dimension("product", "ProductA", MatchTypeEqual, 10.0).
-    Dimension("environment", "prod", MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", MatchTypeEqual).
+    Dimension("environment", "prod", MatchTypeEqual).
     Build()
 
 // Or set tenant context on existing rule builder
 rule := NewRule("rule2").
     Tenant("tenant1").
     Application("app1").
-    Dimension("service", "auth", MatchTypeEqual, 10.0).
+    Dimension("service", "auth", MatchTypeEqual).
     Build()
 
 // Add the rule to the engine
@@ -101,12 +101,12 @@ Rules are completely isolated by tenant/application context:
 ```go
 // Add rule for tenant1
 rule1 := NewRuleWithTenant("rule", "tenant1", "app1").
-    Dimension("type", "A", MatchTypeEqual, 10.0).
+    Dimension("type", "A", MatchTypeEqual).
     Build()
 
 // Add rule for tenant2 (same dimension values, different tenant)
 rule2 := NewRuleWithTenant("rule", "tenant2", "app1").
-    Dimension("type", "A", MatchTypeEqual, 15.0).
+    Dimension("type", "A", MatchTypeEqual).
     Build()
 
 // Query tenant1 - only finds rule1
@@ -125,16 +125,16 @@ Weight conflicts are checked only within the same tenant/application context:
 ```go
 // These rules can have the same weight because they're in different tenant contexts
 rule1 := NewRuleWithTenant("rule1", "tenant1", "app1").
-    Dimension("type", "A", MatchTypeEqual, 10.0).
+    Dimension("type", "A", MatchTypeEqual).
     Build() // Weight: 10.0
 
 rule2 := NewRuleWithTenant("rule2", "tenant2", "app1").
-    Dimension("type", "B", MatchTypeEqual, 10.0).
+    Dimension("type", "B", MatchTypeEqual).
     Build() // Weight: 10.0 (allowed, different tenant)
 
 // This would cause a conflict (same tenant, same weight)
 rule3 := NewRuleWithTenant("rule3", "tenant1", "app1").
-    Dimension("type", "C", MatchTypeEqual, 10.0).
+    Dimension("type", "C", MatchTypeEqual).
     Build() // Error: weight conflict with rule1
 ```
 
@@ -162,7 +162,7 @@ All existing code continues to work without modification:
 ```go
 // This still works - uses default tenant context
 rule := NewRule("global_rule").
-    Dimension("region", "us-west", MatchTypeEqual, 10.0).
+    Dimension("region", "us-west", MatchTypeEqual).
     Build()
 
 query := CreateQuery(map[string]string{"region": "us-west"})
@@ -182,11 +182,11 @@ Within a single tenant, you can have multiple applications:
 ```go
 // Rules for different applications within the same tenant
 app1Rule := NewRuleWithTenant("auth_rule", "tenant1", "auth_service").
-    Dimension("endpoint", "/login", MatchTypeEqual, 10.0).
+    Dimension("endpoint", "/login", MatchTypeEqual).
     Build()
 
 app2Rule := NewRuleWithTenant("payment_rule", "tenant1", "payment_service").
-    Dimension("endpoint", "/charge", MatchTypeEqual, 10.0).
+    Dimension("endpoint", "/charge", MatchTypeEqual).
     Build()
 
 // Queries are isolated by application
@@ -244,14 +244,14 @@ stats := me.GetForestStats()
 ```go
 // Before (single-tenant)
 rule := NewRule("user_rule").
-    Dimension("user_type", "premium", MatchTypeEqual, 10.0).
+    Dimension("user_type", "premium", MatchTypeEqual).
     Build()
 
 query := CreateQuery(map[string]string{"user_type": "premium"})
 
 // After (multi-tenant)
 rule := NewRuleWithTenant("user_rule", tenantID, applicationID).
-    Dimension("user_type", "premium", MatchTypeEqual, 10.0).
+    Dimension("user_type", "premium", MatchTypeEqual).
     Build()
 
 query := CreateQueryWithTenant(tenantID, applicationID, 

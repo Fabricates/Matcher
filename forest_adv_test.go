@@ -6,7 +6,12 @@ import (
 
 func TestRuleForestDimensionOrder(t *testing.T) {
 	// Define dimension order
-	forest := CreateRuleForest()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": {Name: "product", Index: 0, Weight: 10.0},
+		"region":  {Name: "region", Index: 1, Weight: 5.0},
+		"env":     {Name: "env", Index: 2, Weight: 3.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules
 	rule1 := &Rule{
@@ -115,7 +120,12 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 
 func TestRuleForestDimensionTraversal(t *testing.T) {
 	// Test that the forest properly traverses dimensions level by level
-	forest := CreateRuleForest()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": {Name: "product", Index: 0, Weight: 8.0},
+		"region":  {Name: "region", Index: 1, Weight: 6.0},
+		"env":     {Name: "env", Index: 2, Weight: 4.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create a rule that uses all dimensions
 	rule := &Rule{
@@ -173,7 +183,11 @@ func TestRuleForestDimensionTraversal(t *testing.T) {
 
 func TestRuleForestSharedPaths(t *testing.T) {
 	// Test that rules can share paths appropriately
-	forest := CreateRuleForest()
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": {Name: "product", Index: 0, Weight: 12.0},
+		"region":  {Name: "region", Index: 1, Weight: 7.0},
+	}
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Two rules that share the same path but different match types
 	rule1 := &Rule{

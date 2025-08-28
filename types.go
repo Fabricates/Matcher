@@ -53,7 +53,6 @@ type DimensionValue struct {
 	DimensionName string    `json:"dimension_name"`
 	Value         string    `json:"value"`
 	MatchType     MatchType `json:"match_type"`
-	Weight        float64   `json:"weight"`
 }
 
 // Rule represents a matching rule with dynamic dimensions
@@ -171,15 +170,20 @@ func (r *Rule) GetDimensionValue(dimensionName string) *DimensionValue {
 	return nil
 }
 
-// CalculateTotalWeight calculates the total weight of the rule
-func (r *Rule) CalculateTotalWeight() float64 {
+// CalculateTotalWeight calculates the total weight of the rule using dimension configurations
+func (r *Rule) CalculateTotalWeight(dimensionConfigs map[string]*DimensionConfig) float64 {
 	if r.ManualWeight != nil {
 		return *r.ManualWeight
 	}
 
 	total := 0.0
 	for _, dim := range r.Dimensions {
-		total += dim.Weight
+		if config, exists := dimensionConfigs[dim.DimensionName]; exists {
+			total += config.Weight
+		} else {
+			// If no configuration exists, use a default weight of 1.0
+			total += 1.0
+		}
 	}
 	return total
 }

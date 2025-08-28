@@ -20,12 +20,31 @@ func main() {
 	}
 	defer engine.Close()
 
+	// Add dimension configurations with weights
+	dimensionConfigs := []*matcher.DimensionConfig{
+		{Name: "product", Index: 0, Required: true, Weight: 10.0},
+		{Name: "environment", Index: 1, Required: false, Weight: 5.0},
+	}
+
+	for _, config := range dimensionConfigs {
+		if err := engine.AddDimension(config); err != nil {
+			slog.Error("Failed to add dimension", "dimension", config.Name, "error", err)
+			os.Exit(1)
+		}
+	}
+
+	// Create a map of dimension configs for weight calculation
+	configMap := make(map[string]*matcher.DimensionConfig)
+	for _, config := range dimensionConfigs {
+		configMap[config.Name] = config
+	}
+
 	fmt.Println("\n1. Testing default behavior (weight conflicts disabled)")
 
 	// Add first rule
 	rule1 := matcher.NewRule("rule1").
-		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
+		Dimension("product", "ProductA", matcher.MatchTypeEqual).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
 		Metadata("description", "First rule with weight 15.0").
 		Build()
 
@@ -33,20 +52,20 @@ func main() {
 		slog.Error("Failed to add rule1", "error", err)
 		os.Exit(1)
 	} else {
-		fmt.Printf("✅ Added rule1 with total weight: %.2f\n", rule1.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule1 with total weight: %.2f\n", rule1.CalculateTotalWeight(configMap))
 	}
 
 	// Try to add second rule with same calculated weight
 	rule2 := matcher.NewRule("rule2").
-		Dimension("product", "ProductB", matcher.MatchTypeEqual, 7.0).
-		Dimension("environment", "staging", matcher.MatchTypeEqual, 8.0).
+		Dimension("product", "ProductB", matcher.MatchTypeEqual).
+		Dimension("environment", "staging", matcher.MatchTypeEqual).
 		Metadata("description", "Second rule also with weight 15.0").
 		Build()
 
 	if err := engine.AddRule(rule2); err != nil {
 		fmt.Printf("❌ Failed to add rule2: %v\n", err)
 	} else {
-		fmt.Printf("✅ Added rule2 with total weight: %.2f\n", rule2.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule2 with total weight: %.2f\n", rule2.CalculateTotalWeight(configMap))
 	}
 
 	fmt.Println("\n2. Enabling duplicate weights")
@@ -56,27 +75,27 @@ func main() {
 	if err := engine.AddRule(rule2); err != nil {
 		fmt.Printf("❌ Failed to add rule2 after enabling duplicates: %v\n", err)
 	} else {
-		fmt.Printf("✅ Successfully added rule2 with duplicate weight: %.2f\n", rule2.CalculateTotalWeight())
+		fmt.Printf("✅ Successfully added rule2 with duplicate weight: %.2f\n", rule2.CalculateTotalWeight(configMap))
 	}
 
 	// Add another rule with the same weight
 	rule3 := matcher.NewRule("rule3").
-		Dimension("product", "ProductC", matcher.MatchTypeEqual, 3.0).
-		Dimension("environment", "development", matcher.MatchTypeEqual, 12.0).
+		Dimension("product", "ProductC", matcher.MatchTypeEqual).
+		Dimension("environment", "development", matcher.MatchTypeEqual).
 		Metadata("description", "Third rule also with weight 15.0").
 		Build()
 
 	if err := engine.AddRule(rule3); err != nil {
 		fmt.Printf("❌ Failed to add rule3: %v\n", err)
 	} else {
-		fmt.Printf("✅ Added rule3 with total weight: %.2f\n", rule3.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule3 with total weight: %.2f\n", rule3.CalculateTotalWeight(configMap))
 	}
 
 	fmt.Println("\n3. Testing manual weight conflicts")
 
 	// Add rule with manual weight
 	rule4 := matcher.NewRule("rule4").
-		Dimension("product", "ProductD", matcher.MatchTypeEqual, 1.0).
+		Dimension("product", "ProductD", matcher.MatchTypeEqual).
 		ManualWeight(25.0).
 		Metadata("description", "Rule with manual weight override").
 		Build()
@@ -84,12 +103,12 @@ func main() {
 	if err := engine.AddRule(rule4); err != nil {
 		fmt.Printf("❌ Failed to add rule4: %v\n", err)
 	} else {
-		fmt.Printf("✅ Added rule4 with manual weight: %.2f\n", rule4.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule4 with manual weight: %.2f\n", rule4.CalculateTotalWeight(configMap))
 	}
 
 	// Try to add another rule with same manual weight
 	rule5 := matcher.NewRule("rule5").
-		Dimension("product", "ProductE", matcher.MatchTypeEqual, 50.0).
+		Dimension("product", "ProductE", matcher.MatchTypeEqual).
 		ManualWeight(25.0). // Same manual weight
 		Metadata("description", "Another rule with same manual weight").
 		Build()
@@ -97,7 +116,7 @@ func main() {
 	if err := engine.AddRule(rule5); err != nil {
 		fmt.Printf("❌ Failed to add rule5: %v\n", err)
 	} else {
-		fmt.Printf("✅ Added rule5 with manual weight: %.2f\n", rule5.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule5 with manual weight: %.2f\n", rule5.CalculateTotalWeight(configMap))
 	}
 
 	fmt.Println("\n4. Disabling duplicate weights again")
@@ -105,14 +124,14 @@ func main() {
 
 	// Try to add another rule with conflicting weight
 	rule6 := matcher.NewRule("rule6").
-		Dimension("product", "ProductF", matcher.MatchTypeEqual, 25.0).
+		Dimension("product", "ProductF", matcher.MatchTypeEqual).
 		Metadata("description", "Rule that conflicts with manual weight").
 		Build()
 
 	if err := engine.AddRule(rule6); err != nil {
 		fmt.Printf("❌ Failed to add rule6: %v\n", err)
 	} else {
-		fmt.Printf("✅ Added rule6 with total weight: %.2f\n", rule6.CalculateTotalWeight())
+		fmt.Printf("✅ Added rule6 with total weight: %.2f\n", rule6.CalculateTotalWeight(configMap))
 	}
 
 	fmt.Println("\n5. Testing queries with duplicate weights")

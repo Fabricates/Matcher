@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -40,31 +40,31 @@ func main() {
 	rules := []*matcher.Rule{
 		// Tree 1: product="WebApp", MatchType=Equal
 		matcher.NewRule("rule1").
-			Dimension("product", "WebApp", matcher.MatchTypeEqual, 10.0).
-			Dimension("route", "API", matcher.MatchTypeEqual, 5.0).
+			Dimension("product", "WebApp", matcher.MatchTypeEqual).
+			Dimension("route", "API", matcher.MatchTypeEqual).
 			Build(),
 		matcher.NewRule("rule2").
-			Dimension("product", "WebApp", matcher.MatchTypeEqual, 10.0).
-			Dimension("tool", "Database", matcher.MatchTypePrefix, 8.0).
+			Dimension("product", "WebApp", matcher.MatchTypeEqual).
+			Dimension("tool", "Database", matcher.MatchTypePrefix).
 			Build(),
 		matcher.NewRule("rule3").
-			Dimension("product", "WebApp", matcher.MatchTypeEqual, 10.0).
-			Dimension("route", "Frontend", matcher.MatchTypeEqual, 3.0).
+			Dimension("product", "WebApp", matcher.MatchTypeEqual).
+			Dimension("route", "Frontend", matcher.MatchTypeEqual).
 			Build(),
 		// Tree 2: product="MobileApp", MatchType=Equal
 		matcher.NewRule("rule4").
-			Dimension("product", "MobileApp", matcher.MatchTypeEqual, 10.0).
-			Dimension("route", "Native", matcher.MatchTypeEqual, 5.0).
+			Dimension("product", "MobileApp", matcher.MatchTypeEqual).
+			Dimension("route", "Native", matcher.MatchTypeEqual).
 			Build(),
 		// Tree 3: route="Service", MatchType=Equal
 		matcher.NewRule("rule5").
-			Dimension("route", "Service", matcher.MatchTypeEqual, 15.0).
-			Dimension("product", "Backend", matcher.MatchTypeEqual, 5.0).
+			Dimension("route", "Service", matcher.MatchTypeEqual).
+			Dimension("product", "Backend", matcher.MatchTypeEqual).
 			Build(),
 		// Tree 4: tool="micro", MatchType=Prefix
 		matcher.NewRule("rule6").
-			Dimension("tool", "micro", matcher.MatchTypePrefix, 12.0).
-			Dimension("product", "Platform", matcher.MatchTypeSuffix, 8.0).
+			Dimension("tool", "micro", matcher.MatchTypePrefix).
+			Dimension("product", "Platform", matcher.MatchTypeSuffix).
 			Build(),
 	}
 

@@ -40,9 +40,9 @@ func TestBasicMatching(t *testing.T) {
 
 	// Add a test rule
 	rule := NewRule("test_rule").
-		DimensionWithWeight("product", "TestProduct", MatchTypeEqual, 10.0).
-		DimensionWithWeight("route", "TestRoute", MatchTypeEqual, 5.0).
-		DimensionWithWeight("tool", "TestTool", MatchTypeEqual, 8.0).
+		Dimension("product", "TestProduct", MatchTypeEqual).
+		Dimension("route", "TestRoute", MatchTypeEqual).
+		Dimension("tool", "TestTool", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -85,7 +85,8 @@ func TestPrefixMatching(t *testing.T) {
 
 	// Add prefix rule
 	rule := NewRule("prefix_rule").
-		DimensionWithWeight("product", "Test", MatchTypePrefix, 10.0).
+		Dimension("product", "Test", MatchTypePrefix).
+		ManualWeight(10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -122,7 +123,8 @@ func TestSuffixMatching(t *testing.T) {
 
 	// Add suffix rule
 	rule := NewRule("suffix_rule").
-		DimensionWithWeight("product", "Product", MatchTypeSuffix, 10.0).
+		Dimension("product", "Product", MatchTypeSuffix).
+		ManualWeight(10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -159,7 +161,7 @@ func TestAnyMatching(t *testing.T) {
 
 	// Add any rule (fallback)
 	rule := NewRule("any_rule").
-		DimensionWithWeight("product", "", MatchTypeAny, 1.0).
+		Dimension("product", "", MatchTypeAny).
 		ManualWeight(5.0).
 		Build()
 
@@ -201,12 +203,14 @@ func TestWeightPriority(t *testing.T) {
 
 	// Add high weight rule
 	highRule := NewRule("high_weight").
-		DimensionWithWeight("product", "Test", MatchTypeEqual, 100.0).
+		Dimension("product", "Test", MatchTypeEqual).
+		ManualWeight(100.0).
 		Build()
 
 	// Add low weight rule
 	lowRule := NewRule("low_weight").
-		DimensionWithWeight("product", "Test", MatchTypeEqual, 1.0).
+		Dimension("product", "Test", MatchTypeEqual).
+		ManualWeight(1.0).
 		Build()
 
 	err = engine.AddRule(highRule)
@@ -248,12 +252,13 @@ func TestManualWeightOverride(t *testing.T) {
 
 	// Add rule with high calculated weight
 	highCalcRule := NewRule("high_calc").
-		DimensionWithWeight("product", "Test", MatchTypeEqual, 100.0).
+		Dimension("product", "Test", MatchTypeEqual).
+		ManualWeight(100.0).
 		Build()
 
 	// Add rule with low calculated weight but high manual weight
 	highManualRule := NewRule("high_manual").
-		DimensionWithWeight("product", "Test", MatchTypeEqual, 1.0).
+		Dimension("product", "Test", MatchTypeEqual).
 		ManualWeight(200.0).
 		Build()
 
@@ -300,7 +305,8 @@ func TestCaching(t *testing.T) {
 
 	// Add test rule
 	rule := NewRule("cache_test").
-		DimensionWithWeight("product", "CacheTest", MatchTypeEqual, 10.0).
+		Dimension("product", "CacheTest", MatchTypeEqual).
+		ManualWeight(10.0).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -354,8 +360,9 @@ func TestPerformance(t *testing.T) {
 	// Add multiple rules for performance testing
 	for i := 0; i < 100; i++ {
 		rule := NewRule(fmt.Sprintf("perf_rule_%d", i)).
-			DimensionWithWeight("product", fmt.Sprintf("Product%d", i), MatchTypeEqual, 10.0).
-			DimensionWithWeight("route", fmt.Sprintf("Route%d", i), MatchTypeEqual, 5.0).
+			Dimension("product", fmt.Sprintf("Product%d", i), MatchTypeEqual).
+			Dimension("route", fmt.Sprintf("Route%d", i), MatchTypeEqual).
+			ManualWeight(15.0).
 			Build()
 
 		err = engine.AddRule(rule)
@@ -424,8 +431,8 @@ func TestDynamicDimensions(t *testing.T) {
 
 	// Add rule using custom dimension and required dimensions
 	rule := NewRule("custom_rule").
-		Dimension("product", "CustomProduct", MatchTypeEqual, 10.0). // Required dimension
-		Dimension("custom_dimension", "custom_value", MatchTypeEqual, 20.0).
+		Dimension("product", "CustomProduct", MatchTypeEqual). // Required dimension
+		Dimension("custom_dimension", "custom_value", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule)
@@ -466,7 +473,7 @@ func TestEventSubscription(t *testing.T) {
 
 	// Publish a rule addition event
 	rule := NewRule("event_rule").
-		Dimension("product", "EventProduct", MatchTypeEqual, 10.0).
+		Dimension("product", "EventProduct", MatchTypeEqual).
 		Build()
 
 	event := &Event{
@@ -512,8 +519,8 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 
 	// Test 1: Without configured dimensions, any rule should be allowed
 	rule1 := NewRule("flexible_rule").
-		Dimension("product", "TestProduct", MatchTypeEqual, 10.0).
-		Dimension("route", "TestRoute", MatchTypeEqual, 5.0).
+		Dimension("product", "TestProduct", MatchTypeEqual).
+		Dimension("route", "TestRoute", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule1)
@@ -544,8 +551,8 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 
 	// Test 3: Valid rule that matches configured dimensions
 	rule2 := NewRule("valid_rule").
-		Dimension("product", "TestProduct2", MatchTypeEqual, 10.0).
-		Dimension("route", "TestRoute2", MatchTypeEqual, 5.0).
+		Dimension("product", "TestProduct2", MatchTypeEqual).
+		Dimension("route", "TestRoute2", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule2)
@@ -555,7 +562,7 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 
 	// Test 4: Rule missing required dimension should fail
 	rule3 := NewRule("missing_required").
-		Dimension("route", "TestRoute3", MatchTypeEqual, 5.0).
+		Dimension("route", "TestRoute3", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule3)
@@ -568,9 +575,9 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 
 	// Test 5: Rule with extra dimension not in configuration should fail
 	rule4 := NewRule("extra_dimension").
-		Dimension("product", "TestProduct4", MatchTypeEqual, 10.0).
-		Dimension("route", "TestRoute4", MatchTypeEqual, 5.0).
-		Dimension("unknown_dim", "unknown_value", MatchTypeEqual, 8.0).
+		Dimension("product", "TestProduct4", MatchTypeEqual).
+		Dimension("route", "TestRoute4", MatchTypeEqual).
+		Dimension("unknown_dim", "unknown_value", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule4)
@@ -583,7 +590,7 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 
 	// Test 6: Rule with only required dimensions should be valid
 	rule5 := NewRule("only_required").
-		Dimension("product", "TestProduct5", MatchTypeEqual, 10.0).
+		Dimension("product", "TestProduct5", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule5)
@@ -609,13 +616,13 @@ func TestRebuild(t *testing.T) {
 
 	// Add some rules
 	rule1 := NewRule("rebuild_test_1").
-		Dimension("product", "Product1", MatchTypeEqual, 10.0).
-		Dimension("route", "Route1", MatchTypeEqual, 5.0).
+		Dimension("product", "Product1", MatchTypeEqual).
+		Dimension("route", "Route1", MatchTypeEqual).
 		Build()
 
 	rule2 := NewRule("rebuild_test_2").
-		Dimension("product", "Product2", MatchTypeEqual, 10.0).
-		Dimension("tool", "Tool2", MatchTypeEqual, 8.0).
+		Dimension("product", "Product2", MatchTypeEqual).
+		Dimension("tool", "Tool2", MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule1)
@@ -655,7 +662,7 @@ func TestRebuild(t *testing.T) {
 
 	// Now manually add a rule to memory (not persisted) to test rebuild clears it
 	tempRule := NewRule("temp_rule_not_persisted").
-		Dimension("product", "TempProduct", MatchTypeEqual, 10.0).
+		Dimension("product", "TempProduct", MatchTypeEqual).
 		Build()
 
 	// Add directly to internal structures without persistence (simulate corrupted state)

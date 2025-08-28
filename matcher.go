@@ -81,7 +81,7 @@ func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string)
 	}
 
 	// Create new forest index for this tenant/application
-	newForest := CreateRuleForestWithTenant(tenantID, applicationID)
+	newForest := CreateRuleForestWithTenant(tenantID, applicationID, m.dimensionConfigs)
 	forestIndex := &ForestIndex{RuleForest: newForest}
 	m.forestIndexes[key] = forestIndex
 
@@ -217,11 +217,6 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Populate weights from dimension configurations
-	if err := m.populateDimensionWeights(rule); err != nil {
-		return fmt.Errorf("failed to populate dimension weights: %w", err)
-	}
-
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
@@ -271,35 +266,10 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	return nil
 }
 
-// populateDimensionWeights populates weights for dimensions from dimension configurations
-func (m *InMemoryMatcher) populateDimensionWeights(rule *Rule) error {
-	for _, dimValue := range rule.Dimensions {
-		// Check if weight is already set (non-zero) - if so, keep it for backward compatibility
-		if dimValue.Weight != 0.0 {
-			continue
-		}
-		
-		// Look up dimension configuration
-		if config, exists := m.dimensionConfigs[dimValue.DimensionName]; exists {
-			dimValue.Weight = config.Weight
-		} else {
-			// If no configuration exists, use a default weight of 1.0
-			// This maintains backward compatibility with flexible mode
-			dimValue.Weight = 1.0
-		}
-	}
-	return nil
-}
-
 // updateRule updates an existing rule
 func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	// Populate weights from dimension configurations
-	if err := m.populateDimensionWeights(rule); err != nil {
-		return fmt.Errorf("failed to populate dimension weights: %w", err)
-	}
 
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
@@ -643,10 +613,6 @@ func (m *InMemoryMatcher) validateRule(rule *Rule) error {
 		if dimValue.DimensionName == "" {
 			return fmt.Errorf("dimension name cannot be empty")
 		}
-
-		if dimValue.Weight < 0 {
-			return fmt.Errorf("dimension weight cannot be negative")
-		}
 	}
 
 	return nil
@@ -699,7 +665,7 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 		return nil
 	}
 
-	newRuleWeight := rule.CalculateTotalWeight()
+	newRuleWeight := rule.CalculateTotalWeight(m.dimensionConfigs)
 	tenantKey := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 
 	// Check against existing rules in the same tenant/application context
@@ -710,7 +676,7 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 				continue
 			}
 
-			existingWeight := existingRule.CalculateTotalWeight()
+			existingWeight := existingRule.CalculateTotalWeight(m.dimensionConfigs)
 			if existingWeight == newRuleWeight {
 				return fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f in tenant '%s' application '%s'",
 					existingRuleID, existingWeight, rule.TenantID, rule.ApplicationID)
@@ -740,10 +706,6 @@ func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs ma
 	for _, dimValue := range rule.Dimensions {
 		if dimValue.DimensionName == "" {
 			return fmt.Errorf("dimension name cannot be empty")
-		}
-
-		if dimValue.Weight < 0 {
-			return fmt.Errorf("dimension weight cannot be negative")
 		}
 	}
 
@@ -923,7 +885,7 @@ func (m *InMemoryMatcher) Rebuild() error {
 		// Get or create forest for this tenant/application
 		key := m.getTenantKey(config.TenantID, config.ApplicationID)
 		if newForestIndexes[key] == nil {
-			newForest := CreateRuleForestWithTenant(config.TenantID, config.ApplicationID)
+			newForest := CreateRuleForestWithTenant(config.TenantID, config.ApplicationID, m.dimensionConfigs)
 			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
 		}
 		newForestIndexes[key].InitializeDimension(config.Name)
@@ -952,7 +914,7 @@ func (m *InMemoryMatcher) Rebuild() error {
 
 		// Get or create forest for this tenant/application
 		if newForestIndexes[key] == nil {
-			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID)
+			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, m.dimensionConfigs)
 			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
 		}
 		newForestIndexes[key].AddRule(rule)

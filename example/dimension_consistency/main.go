@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Fabricates/Matcher"
+	matcher "github.com/Fabricates/Matcher"
 )
 
 func main() {
@@ -28,8 +28,8 @@ func main() {
 
 	// Without configured dimensions, any rule structure is allowed
 	rule1 := matcher.NewRule("flexible_rule_1").
-		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "production", matcher.MatchTypeEqual, 5.0).
+		Dimension("product", "ProductA", matcher.MatchTypeEqual).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule1)
@@ -41,9 +41,9 @@ func main() {
 	}
 
 	rule2 := matcher.NewRule("flexible_rule_2").
-		Dimension("product", "ProductB", matcher.MatchTypeEqual, 10.0).
-		Dimension("region", "us-west", matcher.MatchTypeEqual, 8.0).
-		Dimension("tier", "premium", matcher.MatchTypeEqual, 3.0).
+		Dimension("product", "ProductB", matcher.MatchTypeEqual).
+		Dimension("region", "us-west", matcher.MatchTypeEqual).
+		Dimension("tier", "premium", matcher.MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(rule2)
@@ -96,9 +96,9 @@ func main() {
 
 	// This should work - matches configured dimensions exactly
 	validRule := matcher.NewRule("valid_rule").
-		Dimension("product", "ProductC", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "staging", matcher.MatchTypeEqual, 8.0).
-		Dimension("region", "eu-west", matcher.MatchTypeEqual, 5.0).
+		Dimension("product", "ProductC", matcher.MatchTypeEqual).
+		Dimension("environment", "staging", matcher.MatchTypeEqual).
+		Dimension("region", "eu-west", matcher.MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(validRule)
@@ -110,8 +110,8 @@ func main() {
 
 	// This should work - only required dimensions
 	minimalRule := matcher.NewRule("minimal_rule").
-		Dimension("product", "ProductD", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "development", matcher.MatchTypeEqual, 8.0).
+		Dimension("product", "ProductD", matcher.MatchTypeEqual).
+		Dimension("environment", "development", matcher.MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(minimalRule)
@@ -125,8 +125,8 @@ func main() {
 	fmt.Println("\n4. Testing validation failures:")
 
 	missingRequired := matcher.NewRule("missing_required").
-		Dimension("environment", "production", matcher.MatchTypeEqual, 8.0).
-		Dimension("region", "us-east", matcher.MatchTypeEqual, 5.0).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
+		Dimension("region", "us-east", matcher.MatchTypeEqual).
 		Build()
 
 	err = engine.AddRule(missingRequired)
@@ -138,9 +138,9 @@ func main() {
 
 	// This should fail - extra dimension not in configuration
 	extraDimension := matcher.NewRule("extra_dimension").
-		Dimension("product", "ProductE", matcher.MatchTypeEqual, 10.0).
-		Dimension("environment", "production", matcher.MatchTypeEqual, 8.0).
-		Dimension("tier", "premium", matcher.MatchTypeEqual, 3.0). // Not in config
+		Dimension("product", "ProductE", matcher.MatchTypeEqual).
+		Dimension("environment", "production", matcher.MatchTypeEqual).
+		Dimension("tier", "premium", matcher.MatchTypeEqual). // Not in config
 		Build()
 
 	err = engine.AddRule(extraDimension)

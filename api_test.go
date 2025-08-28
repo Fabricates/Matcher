@@ -155,12 +155,25 @@ func TestAPIFindAllMatches(t *testing.T) {
 	}
 	defer engine.Close()
 
-	// Add multiple rules
+	// Add dimension config to control weights
+	config := &DimensionConfig{
+		Name:   "region",
+		Index:  0,
+		Weight: 5.0,
+	}
+	if err := engine.AddDimension(config); err != nil {
+		t.Fatalf("Failed to add dimension config: %v", err)
+	}
+
+	// Add multiple rules with different manual weights to avoid conflicts
 	for i := 0; i < 3; i++ {
 		rule := NewRule("all-match-test").
 			Dimension("region", "us-west", MatchTypeEqual).
 			Build()
 		rule.ID = rule.ID + string(rune('a'+i)) // Make unique IDs
+		// Give each rule a different manual weight to avoid conflicts
+		manualWeight := float64(10 + i)
+		rule.ManualWeight = &manualWeight
 		if err := engine.AddRule(rule); err != nil {
 			t.Fatalf("Failed to add rule %d: %v", i, err)
 		}
@@ -190,6 +203,16 @@ func TestAPIBatchAddRules(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add dimension config to control weights
+	config := &DimensionConfig{
+		Name:   "region",
+		Index:  0,
+		Weight: 3.0,
+	}
+	if err := engine.AddDimension(config); err != nil {
+		t.Fatalf("Failed to add dimension config: %v", err)
+	}
+
 	// Create batch rules
 	var rules []*Rule
 	for i := 0; i < 5; i++ {
@@ -197,6 +220,9 @@ func TestAPIBatchAddRules(t *testing.T) {
 			Dimension("region", "us-west", MatchTypeEqual).
 			Build()
 		rule.ID = rule.ID + string(rune('a'+i)) // Make unique IDs
+		// Give each rule a different manual weight to avoid conflicts
+		manualWeight := float64(5 + i)
+		rule.ManualWeight = &manualWeight
 		rules = append(rules, rule)
 	}
 
@@ -222,10 +248,9 @@ func TestAPIAddSimpleRule(t *testing.T) {
 
 	// Add simple rule
 	dimensions := map[string]string{"region": "us-west", "env": "prod"}
-	weights := map[string]float64{"region": 1.0, "env": 0.5}
 	manualWeight := 5.0
 
-	err = engine.AddSimpleRule("simple-test", dimensions, weights, &manualWeight)
+	err = engine.AddSimpleRule("simple-test", dimensions, &manualWeight)
 	if err != nil {
 		t.Errorf("AddSimpleRule failed: %v", err)
 	}

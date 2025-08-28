@@ -88,20 +88,6 @@ func (rb *RuleBuilder) Dimension(name, value string, matchType MatchType) *RuleB
 		DimensionName: name,
 		Value:         value,
 		MatchType:     matchType,
-		Weight:        0.0, // Will be populated from dimension config during AddRule
-	}
-	rb.rule.Dimensions = append(rb.rule.Dimensions, dimValue)
-	return rb
-}
-
-// DimensionWithWeight adds a dimension to the rule being built with explicit weight
-// This method is provided for backward compatibility and advanced use cases where you want to override the configured weight
-func (rb *RuleBuilder) DimensionWithWeight(name, value string, matchType MatchType, weight float64) *RuleBuilder {
-	dimValue := &DimensionValue{
-		DimensionName: name,
-		Value:         value,
-		MatchType:     matchType,
-		Weight:        weight,
 	}
 	rb.rule.Dimensions = append(rb.rule.Dimensions, dimValue)
 	return rb
@@ -250,17 +236,12 @@ func (me *MatcherEngine) BatchAddRules(rules []*Rule) error {
 // Convenience methods for quick rule creation
 
 // AddSimpleRule creates a rule with all exact matches
-func (me *MatcherEngine) AddSimpleRule(id string, dimensions map[string]string, weights map[string]float64, manualWeight *float64) error {
+func (me *MatcherEngine) AddSimpleRule(id string, dimensions map[string]string, manualWeight *float64) error {
 	builder := NewRule(id)
 
 	for dimName, value := range dimensions {
-		if w, exists := weights[dimName]; exists {
-			// Use explicit weight if provided (for backward compatibility)
-			builder.DimensionWithWeight(dimName, value, MatchTypeEqual, w)
-		} else {
-			// Use configured weight from dimension config
-			builder.Dimension(dimName, value, MatchTypeEqual)
-		}
+		// Use configured weight from dimension config
+		builder.Dimension(dimName, value, MatchTypeEqual)
 	}
 
 	if manualWeight != nil {

@@ -67,10 +67,10 @@ func main() {
 
 	// Add rule to node-1
 	rule1 := matcher.NewRule("production_rule_1").
-		Dimension("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-		Dimension("route", "main", matcher.MatchTypeEqual, 5.0).
-		Dimension("tool", "laser", matcher.MatchTypeEqual, 8.0).
-		Dimension("recipe", "recipe_alpha", matcher.MatchTypeEqual, 12.0).
+		Dimension("product", "ProductA", matcher.MatchTypeEqual).
+		Dimension("route", "main", matcher.MatchTypeEqual).
+		Dimension("tool", "laser", matcher.MatchTypeEqual).
+		Dimension("recipe", "recipe_alpha", matcher.MatchTypeEqual).
 		Metadata("description", "Production rule from node-1").
 		Build()
 
@@ -82,10 +82,10 @@ func main() {
 
 	// Add rule to node-2
 	rule2 := matcher.NewRule("production_rule_2").
-		Dimension("product", "ProductB", matcher.MatchTypeEqual, 8.0).
-		Dimension("route", "backup", matcher.MatchTypeEqual, 3.0).
-		Dimension("tool", "plasma", matcher.MatchTypeEqual, 6.0).
-		Dimension("recipe", "recipe_beta", matcher.MatchTypeEqual, 10.0).
+		Dimension("product", "ProductB", matcher.MatchTypeEqual).
+		Dimension("route", "backup", matcher.MatchTypeEqual).
+		Dimension("tool", "plasma", matcher.MatchTypeEqual).
+		Dimension("recipe", "recipe_beta", matcher.MatchTypeEqual).
 		Metadata("description", "Production rule from node-2").
 		Build()
 

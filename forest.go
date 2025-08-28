@@ -26,12 +26,13 @@ type MatchBranch struct {
 
 // RuleForest represents the forest structure with shared nodes
 type RuleForest struct {
-	TenantID       string                      `json:"tenant_id,omitempty"`      // Tenant identifier for this forest
-	ApplicationID  string                      `json:"application_id,omitempty"` // Application identifier for this forest
-	Trees          map[MatchType][]*SharedNode `json:"trees"`                    // Trees organized by first dimension match type
-	DimensionOrder []string                    `json:"dimension_order"`          // Order of dimensions for tree traversal
-	RuleIndex      map[string][]*SharedNode    `json:"rule_index"`               // Index of rules to their nodes for quick removal
-	mu             sync.RWMutex
+	TenantID         string                      `json:"tenant_id,omitempty"`      // Tenant identifier for this forest
+	ApplicationID    string                      `json:"application_id,omitempty"` // Application identifier for this forest
+	Trees            map[MatchType][]*SharedNode `json:"trees"`                    // Trees organized by first dimension match type
+	DimensionOrder   []string                    `json:"dimension_order"`          // Order of dimensions for tree traversal
+	RuleIndex        map[string][]*SharedNode    `json:"rule_index"`               // Index of rules to their nodes for quick removal
+	DimensionConfigs map[string]*DimensionConfig `json:"-"`                        // Reference to dimension configurations (not serialized)
+	mu               sync.RWMutex
 }
 
 // CreateSharedNode creates a shared node
@@ -95,28 +96,30 @@ func (sn *SharedNode) RemoveRule(ruleID string) bool {
 }
 
 // CreateRuleForest creates a rule forest with the structure
-func CreateRuleForest() *RuleForest {
+func CreateRuleForest(dimensionConfigs map[string]*DimensionConfig) *RuleForest {
 	return &RuleForest{
-		Trees:          make(map[MatchType][]*SharedNode),
-		DimensionOrder: []string{},
-		RuleIndex:      make(map[string][]*SharedNode),
+		Trees:            make(map[MatchType][]*SharedNode),
+		DimensionOrder:   []string{},
+		RuleIndex:        make(map[string][]*SharedNode),
+		DimensionConfigs: dimensionConfigs,
 	}
 }
 
 // CreateRuleForestWithTenant creates a rule forest for a specific tenant and application
-func CreateRuleForestWithTenant(tenantID, applicationID string) *RuleForest {
+func CreateRuleForestWithTenant(tenantID, applicationID string, dimensionConfigs map[string]*DimensionConfig) *RuleForest {
 	return &RuleForest{
-		TenantID:       tenantID,
-		ApplicationID:  applicationID,
-		Trees:          make(map[MatchType][]*SharedNode),
-		DimensionOrder: []string{},
-		RuleIndex:      make(map[string][]*SharedNode),
+		TenantID:         tenantID,
+		ApplicationID:    applicationID,
+		Trees:            make(map[MatchType][]*SharedNode),
+		DimensionOrder:   []string{},
+		RuleIndex:        make(map[string][]*SharedNode),
+		DimensionConfigs: dimensionConfigs,
 	}
 }
 
 // CreateForestIndexCompat creates a forest index compatible with the old interface
 func CreateForestIndexCompat() *RuleForest {
-	return CreateRuleForest()
+	return CreateRuleForest(make(map[string]*DimensionConfig))
 }
 
 // GetDefaultDimensionOrder returns the default dimension order from types.go
@@ -423,7 +426,7 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 
 // insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
 func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRule *Rule) {
-	newWeight := newRule.CalculateTotalWeight()
+	newWeight := newRule.CalculateTotalWeight(rf.DimensionConfigs)
 
 	// If slice is empty or new rule has highest weight, insert at front
 	if len(*candidateRules) == 0 {
@@ -440,7 +443,7 @@ func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRu
 	// Find the right position to maintain weight order
 	insertPos := len(*candidateRules)
 	for i, rule := range *candidateRules {
-		if newWeight > rule.CalculateTotalWeight() {
+		if newWeight > rule.CalculateTotalWeight(rf.DimensionConfigs) {
 			insertPos = i
 			break
 		}
