@@ -32,7 +32,7 @@ func main() {
 
 		// Test health
 		if err := redisBroker.Health(ctx); err != nil {
-			slog.Error("Redis broker health check failed: %v", err)
+			slog.Error("Redis broker health check failed", "error", err)
 		} else {
 			fmt.Println("Redis broker is healthy")
 
