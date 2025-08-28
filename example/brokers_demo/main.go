@@ -26,7 +26,7 @@ func main() {
 
 	redisBroker, err := matcher.NewRedisEventBroker(redisConfig)
 	if err != nil {
-		slog.Error("Failed to create Redis broker: %v", err)
+		slog.Error("Failed to create Redis broker", "error", err)
 	} else {
 		defer redisBroker.Close()
 
