@@ -5,50 +5,53 @@ import (
 	"testing"
 )
 
-func TestDynamicDimensionConfigs(t *testing.T) {
-	// Create a temporary directory for the test
-	tempDir, err := os.MkdirTemp("", "matcher_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
 
-	// Create a matcher with initial dimension configs
+	// Create matcher engine
 	engine, err := NewMatcherEngineWithDefaults(tempDir)
 	if err != nil {
-		t.Fatalf("Failed to create engine: %v", err)
+		t.Fatalf("Failed to create matcher engine: %v", err)
 	}
 	defer engine.Close()
 
-	// Allow duplicate weights for this test since we're testing dynamic configs, not weight conflicts
-	engine.SetAllowDuplicateWeights(true)
+	// Add dimension configurations with match type-specific weights
+	regionConfig := NewDimensionConfig("region", 0, true, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+	regionConfig.SetWeight(MatchTypePrefix, 7.0)
 
-	// Add dimensions with default weights
-	err = engine.AddDimension(NewDimensionConfig("region", 0, true, 10.0))
+	envConfig := NewDimensionConfig("env", 1, true, 3.0)
+	envConfig.SetWeight(MatchTypeEqual, 8.0)
+	envConfig.SetWeight(MatchTypeAny, 2.0)
+
+	err = engine.AddDimension(regionConfig)
 	if err != nil {
 		t.Fatalf("Failed to add region dimension: %v", err)
 	}
 
-	err = engine.AddDimension(NewDimensionConfig("env", 1, true, 5.0))
+	err = engine.AddDimension(envConfig)
 	if err != nil {
 		t.Fatalf("Failed to add env dimension: %v", err)
 	}
 
-	// Add test rules using AddSimpleRule
-	dimensions1 := map[string]string{
-		"region": "us-west",
-		"env":    "prod",
-	}
-	err = engine.AddSimpleRule("rule1", dimensions1, nil)
+	// Add test rules with different match types
+	rule1 := NewRule("exact-rule").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Dimension("env", "prod", MatchTypeEqual).
+		Build()
+
+	rule2 := NewRule("prefix-rule").
+		Dimension("region", "us-", MatchTypePrefix).
+		Dimension("env", "any", MatchTypeAny).
+		Build()
+
+	err = engine.AddRule(rule1)
 	if err != nil {
 		t.Fatalf("Failed to add rule1: %v", err)
 	}
 
-	dimensions2 := map[string]string{
-		"region": "us-east",
-		"env":    "prod",
-	}
-	err = engine.AddSimpleRule("rule2", dimensions2, nil)
+	err = engine.AddRule(rule2)
 	if err != nil {
 		t.Fatalf("Failed to add rule2: %v", err)
 	}
@@ -66,24 +69,40 @@ func TestDynamicDimensionConfigs(t *testing.T) {
 		t.Fatalf("FindAllMatches with default configs failed: %v", err)
 	}
 
-	if len(matches1) != 1 {
-		t.Fatalf("Expected 1 match with default configs, got %d", len(matches1))
+	if len(matches1) != 2 {
+		t.Fatalf("Expected 2 matches with default configs, got %d", len(matches1))
 	}
 
-	expectedWeight1 := 15.0 // region (10.0) + env (5.0)
-	if matches1[0].TotalWeight != expectedWeight1 {
-		t.Errorf("Expected weight %f with default configs, got %f", expectedWeight1, matches1[0].TotalWeight)
+	// Expected weights with default configs:
+	// exact-rule: region (10.0 Equal) + env (8.0 Equal) = 18.0
+	// prefix-rule: region (7.0 Prefix) + env (2.0 Any) = 9.0
+	exactMatch1 := findMatchByID(matches1, "exact-rule")
+	prefixMatch1 := findMatchByID(matches1, "prefix-rule")
+
+	if exactMatch1.TotalWeight != 18.0 {
+		t.Errorf("Default configs: expected exact-rule weight 18.0, got %.1f", exactMatch1.TotalWeight)
+	}
+	if prefixMatch1.TotalWeight != 9.0 {
+		t.Errorf("Default configs: expected prefix-rule weight 9.0, got %.1f", prefixMatch1.TotalWeight)
 	}
 
-	// Test 2: Query with dynamic dimension configs (higher weights)
+	// Test 2: Query with dynamic dimension configs (different weights per match type)
+	dynamicRegionConfig := NewDimensionConfig("region", 0, true, 1.0)
+	dynamicRegionConfig.SetWeight(MatchTypeEqual, 50.0)  // Much higher for exact matches
+	dynamicRegionConfig.SetWeight(MatchTypePrefix, 30.0) // High for prefix matches
+
+	dynamicEnvConfig := NewDimensionConfig("env", 1, true, 1.0)
+	dynamicEnvConfig.SetWeight(MatchTypeEqual, 25.0)
+	dynamicEnvConfig.SetWeight(MatchTypeAny, 5.0)
+
 	query2 := &QueryRule{
 		Values: map[string]string{
 			"region": "us-west",
 			"env":    "prod",
 		},
 		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"region": NewDimensionConfig("region", 0, true, 20.0),
-			"env":    NewDimensionConfig("env", 1, true, 15.0),
+			"region": dynamicRegionConfig,
+			"env":    dynamicEnvConfig,
 		},
 	}
 
@@ -92,24 +111,36 @@ func TestDynamicDimensionConfigs(t *testing.T) {
 		t.Fatalf("FindAllMatches with dynamic configs failed: %v", err)
 	}
 
-	if len(matches2) != 1 {
-		t.Fatalf("Expected 1 match with dynamic configs, got %d", len(matches2))
+	if len(matches2) != 2 {
+		t.Fatalf("Expected 2 matches with dynamic configs, got %d", len(matches2))
 	}
 
-	expectedWeight2 := 35.0 // region (20.0) + env (15.0)
-	if matches2[0].TotalWeight != expectedWeight2 {
-		t.Errorf("Expected weight %f with dynamic configs, got %f", expectedWeight2, matches2[0].TotalWeight)
+	// Expected weights with dynamic configs:
+	// exact-rule: region (50.0 Equal) + env (25.0 Equal) = 75.0
+	// prefix-rule: region (30.0 Prefix) + env (5.0 Any) = 35.0
+	exactMatch2 := findMatchByID(matches2, "exact-rule")
+	prefixMatch2 := findMatchByID(matches2, "prefix-rule")
+
+	if exactMatch2.TotalWeight != 75.0 {
+		t.Errorf("Dynamic configs: expected exact-rule weight 75.0, got %.1f", exactMatch2.TotalWeight)
+	}
+	if prefixMatch2.TotalWeight != 35.0 {
+		t.Errorf("Dynamic configs: expected prefix-rule weight 35.0, got %.1f", prefixMatch2.TotalWeight)
 	}
 
 	// Test 3: Query with partial dynamic configs (only override one dimension)
+	partialDynamicConfig := NewDimensionConfig("region", 0, true, 1.0)
+	partialDynamicConfig.SetWeight(MatchTypeEqual, 100.0) // Very high weight for exact matches
+	partialDynamicConfig.SetWeight(MatchTypePrefix, 60.0)
+
 	query3 := &QueryRule{
 		Values: map[string]string{
 			"region": "us-west",
 			"env":    "prod",
 		},
 		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"region": NewDimensionConfig("region", 0, true, 25.0),
-			// env will use the default weight of 5.0
+			"region": partialDynamicConfig,
+			// env will use the default config
 		},
 	}
 
@@ -118,18 +149,156 @@ func TestDynamicDimensionConfigs(t *testing.T) {
 		t.Fatalf("FindAllMatches with partial dynamic configs failed: %v", err)
 	}
 
-	if len(matches3) != 1 {
-		t.Fatalf("Expected 1 match with partial dynamic configs, got %d", len(matches3))
+	if len(matches3) != 2 {
+		t.Fatalf("Expected 2 matches with partial dynamic configs, got %d", len(matches3))
 	}
 
-	expectedWeight3 := 30.0 // region (25.0) + env (5.0 default)
-	if matches3[0].TotalWeight != expectedWeight3 {
-		t.Errorf("Expected weight %f with partial dynamic configs, got %f", expectedWeight3, matches3[0].TotalWeight)
+	// Expected weights with partial dynamic configs:
+	// exact-rule: region (100.0 dynamic Equal) + env (8.0 default Equal) = 108.0
+	// prefix-rule: region (60.0 dynamic Prefix) + env (2.0 default Any) = 62.0
+	exactMatch3 := findMatchByID(matches3, "exact-rule")
+	prefixMatch3 := findMatchByID(matches3, "prefix-rule")
+
+	if exactMatch3.TotalWeight != 108.0 {
+		t.Errorf("Partial dynamic configs: expected exact-rule weight 108.0, got %.1f", exactMatch3.TotalWeight)
+	}
+	if prefixMatch3.TotalWeight != 62.0 {
+		t.Errorf("Partial dynamic configs: expected prefix-rule weight 62.0, got %.1f", prefixMatch3.TotalWeight)
 	}
 
-	t.Logf("Test 1 (default configs): Weight = %f", matches1[0].TotalWeight)
-	t.Logf("Test 2 (full dynamic configs): Weight = %f", matches2[0].TotalWeight)
-	t.Logf("Test 3 (partial dynamic configs): Weight = %f", matches3[0].TotalWeight)
+	t.Logf("Dynamic dimension configs with match types working correctly:")
+	t.Logf("  Default configs - exact: %.1f, prefix: %.1f", exactMatch1.TotalWeight, prefixMatch1.TotalWeight)
+	t.Logf("  Dynamic configs - exact: %.1f, prefix: %.1f", exactMatch2.TotalWeight, prefixMatch2.TotalWeight)
+	t.Logf("  Partial dynamic - exact: %.1f, prefix: %.1f", exactMatch3.TotalWeight, prefixMatch3.TotalWeight)
+}
+
+func TestDynamicConfigsWithComplexMatchTypes(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+
+	// Create matcher engine
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create matcher engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Add initial dimension configurations
+	priorityConfig := NewDimensionConfig("priority", 0, true, 2.0)
+	priorityConfig.SetWeight(MatchTypeEqual, 15.0)
+	priorityConfig.SetWeight(MatchTypePrefix, 10.0)
+	priorityConfig.SetWeight(MatchTypeSuffix, 8.0)
+	priorityConfig.SetWeight(MatchTypeAny, 3.0)
+
+	categoryConfig := NewDimensionConfig("category", 1, true, 1.0)
+	categoryConfig.SetWeight(MatchTypeEqual, 12.0)
+	categoryConfig.SetWeight(MatchTypeAny, 2.0)
+
+	err = engine.AddDimension(priorityConfig)
+	if err != nil {
+		t.Fatalf("Failed to add priority dimension: %v", err)
+	}
+
+	err = engine.AddDimension(categoryConfig)
+	if err != nil {
+		t.Fatalf("Failed to add category dimension: %v", err)
+	}
+
+	// Add rules with different match types
+	rules := []*Rule{
+		NewRule("high-exact").
+			Dimension("priority", "high", MatchTypeEqual).
+			Dimension("category", "urgent", MatchTypeEqual).
+			Build(),
+		NewRule("high-prefix").
+			Dimension("priority", "hi", MatchTypePrefix).
+			Dimension("category", "any", MatchTypeAny).
+			Build(),
+		NewRule("suffix-match").
+			Dimension("priority", "gh", MatchTypeSuffix).
+			Dimension("category", "urgent", MatchTypeEqual).
+			Build(),
+		NewRule("any-match").
+			Dimension("priority", "any", MatchTypeAny).
+			Dimension("category", "any", MatchTypeAny).
+			Build(),
+	}
+
+	for _, rule := range rules {
+		err = engine.AddRule(rule)
+		if err != nil {
+			t.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+		}
+	}
+
+	// Create query that matches all rules
+	baseQuery := map[string]string{
+		"priority": "high",
+		"category": "urgent",
+	}
+
+	// Test with dynamic configs that heavily favor prefix matches
+	dynamicPriorityConfig := NewDimensionConfig("priority", 0, true, 1.0)
+	dynamicPriorityConfig.SetWeight(MatchTypeEqual, 20.0)
+	dynamicPriorityConfig.SetWeight(MatchTypePrefix, 100.0) // Heavily favor prefix matches
+	dynamicPriorityConfig.SetWeight(MatchTypeSuffix, 15.0)
+	dynamicPriorityConfig.SetWeight(MatchTypeAny, 5.0)
+
+	dynamicCategoryConfig := NewDimensionConfig("category", 1, true, 1.0)
+	dynamicCategoryConfig.SetWeight(MatchTypeEqual, 30.0)
+	dynamicCategoryConfig.SetWeight(MatchTypeAny, 10.0)
+
+	query := &QueryRule{
+		Values: baseQuery,
+		DynamicDimensionConfigs: map[string]*DimensionConfig{
+			"priority": dynamicPriorityConfig,
+			"category": dynamicCategoryConfig,
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	if len(matches) != 4 {
+		t.Fatalf("Expected 4 matches, got %d", len(matches))
+	}
+
+	// Expected weights with dynamic configs:
+	expectedWeights := map[string]float64{
+		"high-exact":   50.0,  // priority (20.0 Equal) + category (30.0 Equal)
+		"high-prefix":  110.0, // priority (100.0 Prefix) + category (10.0 Any)
+		"suffix-match": 45.0,  // priority (15.0 Suffix) + category (30.0 Equal)
+		"any-match":    15.0,  // priority (5.0 Any) + category (10.0 Any)
+	}
+
+	// Verify weights and ordering (highest weight first)
+	if matches[0].Rule.ID != "high-prefix" {
+		t.Errorf("Expected highest weight rule 'high-prefix' first, got '%s'", matches[0].Rule.ID)
+	}
+
+	for _, match := range matches {
+		expectedWeight := expectedWeights[match.Rule.ID]
+		if match.TotalWeight != expectedWeight {
+			t.Errorf("Rule %s: expected weight %.1f, got %.1f", match.Rule.ID, expectedWeight, match.TotalWeight)
+		}
+	}
+
+	t.Logf("Dynamic configs prioritizing prefix matches:")
+	for _, match := range matches {
+		t.Logf("  Rule %s: weight %.1f", match.Rule.ID, match.TotalWeight)
+	}
+}
+
+// Helper function to find a match by rule ID
+func findMatchByID(matches []*MatchResult, ruleID string) *MatchResult {
+	for _, match := range matches {
+		if match.Rule.ID == ruleID {
+			return match
+		}
+	}
+	return nil
 }
 
 func TestDynamicConfigsWithMultipleMatchTypes(t *testing.T) {
