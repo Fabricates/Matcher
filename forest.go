@@ -29,6 +29,7 @@ type RuleForest struct {
 	TenantID         string                      `json:"tenant_id,omitempty"`      // Tenant identifier for this forest
 	ApplicationID    string                      `json:"application_id,omitempty"` // Application identifier for this forest
 	Trees            map[MatchType][]*SharedNode `json:"trees"`                    // Trees organized by first dimension match type
+	EqualTreesIndex  map[string]*SharedNode      `json:"-"`                        // Hash map index for O(1) lookup of equal match trees by first dimension value
 	DimensionOrder   []string                    `json:"dimension_order"`          // Order of dimensions for tree traversal
 	RuleIndex        map[string][]*SharedNode    `json:"rule_index"`               // Index of rules to their nodes for quick removal
 	DimensionConfigs map[string]*DimensionConfig `json:"-"`                        // Reference to dimension configurations (not serialized)
@@ -99,6 +100,7 @@ func (sn *SharedNode) RemoveRule(ruleID string) bool {
 func CreateRuleForest(dimensionConfigs map[string]*DimensionConfig) *RuleForest {
 	return &RuleForest{
 		Trees:            make(map[MatchType][]*SharedNode),
+		EqualTreesIndex:  make(map[string]*SharedNode),
 		DimensionOrder:   []string{},
 		RuleIndex:        make(map[string][]*SharedNode),
 		DimensionConfigs: dimensionConfigs,
@@ -111,6 +113,7 @@ func CreateRuleForestWithTenant(tenantID, applicationID string, dimensionConfigs
 		TenantID:         tenantID,
 		ApplicationID:    applicationID,
 		Trees:            make(map[MatchType][]*SharedNode),
+		EqualTreesIndex:  make(map[string]*SharedNode),
 		DimensionOrder:   []string{},
 		RuleIndex:        make(map[string][]*SharedNode),
 		DimensionConfigs: dimensionConfigs,
@@ -191,6 +194,13 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 	if rootNode == nil {
 		rootNode = CreateSharedNode(0, firstDim.DimensionName, firstDim.Value)
 		rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
+
+		// OPTIMIZATION: For equal match types, also add to the hash index for O(1) lookup
+		if firstDim.MatchType == MatchTypeEqual {
+			// Create a composite key: dimensionName:value for uniqueness across different dimensions
+			indexKey := firstDim.DimensionName + ":" + firstDim.Value
+			rf.EqualTreesIndex[indexKey] = rootNode
+		}
 	}
 
 	var ruleNodes []*SharedNode
@@ -312,10 +322,25 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 	// Resolve dimension configs once for this query
 	dimensionConfigs := rf.resolveDimensionConfigs(query)
 
+	// OPTIMIZATION: For equal match types, if we have the first dimension value in the query,
+	// we can directly lookup trees that match that specific value instead of iterating all trees
+	firstDimName := rf.DimensionOrder[0]
+	firstDimValue, hasFirstDimValue := query.Values[firstDimName]
+
 	// Process each tree type to find matching rules
 	for matchType, trees := range rf.Trees {
-		for _, tree := range trees {
-			rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
+		if matchType == MatchTypeEqual && hasFirstDimValue {
+			// OPTIMIZATION: For equal match types, use hash index for O(1) direct lookup
+			indexKey := firstDimName + ":" + firstDimValue
+			if tree, exists := rf.EqualTreesIndex[indexKey]; exists {
+				rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
+			}
+		} else {
+			// For non-equal match types or when we don't have the first dimension value,
+			// iterate through all trees (no optimization possible)
+			for _, tree := range trees {
+				rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
+			}
 		}
 	}
 
@@ -413,8 +438,26 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 	if hasQueryValue {
 		// If query specifies this dimension, search all branches
 		for branchMatchType, branch := range node.Branches {
-			for _, child := range branch.Children {
-				rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+			// OPTIMIZATION: For equal match type branches, we can potentially optimize lookups
+			if branchMatchType == MatchTypeEqual && depth+1 < len(rf.DimensionOrder) {
+				// Check if the next dimension is specified in the query
+				nextDimName := rf.DimensionOrder[depth+1]
+				if nextQueryValue, hasNextQueryValue := query.Values[nextDimName]; hasNextQueryValue {
+					// Direct O(1) lookup for the specific child we're interested in
+					if child, exists := branch.Children[nextQueryValue]; exists {
+						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+					}
+				} else {
+					// No optimization possible - search all children
+					for _, child := range branch.Children {
+						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+					}
+				}
+			} else {
+				// For non-equal match types or when optimization doesn't apply, iterate through all children
+				for _, child := range branch.Children {
+					rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+				}
 			}
 		}
 	} else {
@@ -559,6 +602,10 @@ func (rf *RuleForest) cleanupEmptyNodes() {
 		for _, tree := range trees {
 			if rf.hasRulesOrChildren(tree) {
 				cleanTrees = append(cleanTrees, tree)
+			} else if matchType == MatchTypeEqual {
+				// OPTIMIZATION: Remove from equal trees index if the tree is being cleaned up
+				indexKey := tree.DimensionName + ":" + tree.Value
+				delete(rf.EqualTreesIndex, indexKey)
 			}
 		}
 		rf.Trees[matchType] = cleanTrees
