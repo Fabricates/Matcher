@@ -165,3 +165,280 @@ func TestForestRemoveRule(t *testing.T) {
 		t.Error("Expected not to find the rule after removing")
 	}
 }
+
+// ========================================
+// MERGED DEBUG TESTS (merged from debug_optimization_test.go, very_detailed_debug_test.go, deep_debug_test.go, two_dim_debug_test.go)
+// ========================================
+
+func TestSimpleEqualMatch(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+
+	// Create matcher engine
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create matcher engine: %v", err)
+	}
+	defer engine.Close()
+
+	engine.SetAllowDuplicateWeights(true)
+
+	// Add dimension configurations
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a simple rule with exact match
+	rule := NewRule("simple-rule").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Query for exact match
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Errorf("Expected 1 match, got %d", len(matches))
+	}
+
+	if len(matches) > 0 && matches[0].Rule.ID != "simple-rule" {
+		t.Errorf("Expected rule 'simple-rule', got '%s'", matches[0].Rule.ID)
+	}
+}
+
+func TestVeryDetailedDebug(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+
+	// Create matcher engine
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create matcher engine: %v", err)
+	}
+	defer engine.Close()
+
+	engine.SetAllowDuplicateWeights(true)
+
+	// Add dimension configurations
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a simple rule with exact match
+	rule := NewRule("simple-rule").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Examine the forest structure before optimization
+	forestIndex := engine.matcher.getOrCreateForestIndex("", "")
+
+	t.Logf("=== FOREST STRUCTURE ===")
+	for matchType, trees := range forestIndex.Trees {
+		t.Logf("Trees for match type %s: %d trees", matchType, len(trees))
+		for i, tree := range trees {
+			t.Logf("  Tree %d: Level=%d, DimName=%s, Value=%s", i, tree.Level, tree.DimensionName, tree.Value)
+			t.Logf("    Rules: %d", len(tree.Rules))
+			t.Logf("    Branches: %d", len(tree.Branches))
+			for branchType, branch := range tree.Branches {
+				t.Logf("      Branch %s: %d children", branchType, len(branch.Children))
+				for childKey, child := range branch.Children {
+					t.Logf("        Child key='%s': Level=%d, DimName=%s, Value=%s, Rules=%d",
+						childKey, child.Level, child.DimensionName, child.Value, len(child.Rules))
+				}
+			}
+		}
+	}
+
+	// Query for exact match
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	t.Logf("Found %d matches", len(matches))
+	for _, match := range matches {
+		t.Logf("  Match: %s (weight: %.1f)", match.Rule.ID, match.TotalWeight)
+	}
+}
+
+func TestDeepDebugOptimization(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+
+	// Create matcher engine
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create matcher engine: %v", err)
+	}
+	defer engine.Close()
+
+	engine.SetAllowDuplicateWeights(true)
+
+	// Add dimension configurations
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a simple rule with exact match
+	rule := NewRule("simple-rule").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Check the forest structure
+	forestIndex := engine.matcher.getOrCreateForestIndex("", "")
+	stats := forestIndex.GetStats()
+	t.Logf("Forest stats: %+v", stats)
+
+	// Query for exact match
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	t.Logf("Found %d matches", len(matches))
+	for _, match := range matches {
+		t.Logf("  Match: %s (weight: %.1f)", match.Rule.ID, match.TotalWeight)
+	}
+
+	if len(matches) != 1 {
+		t.Errorf("Expected 1 match, got %d", len(matches))
+	}
+}
+
+func TestTwoDimensionForestStructure(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+
+	// Create matcher engine
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create matcher engine: %v", err)
+	}
+	defer engine.Close()
+
+	engine.SetAllowDuplicateWeights(true)
+
+	// Add dimension configurations
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+
+	envConfig := NewDimensionConfig("env", 1, false, 3.0)
+	envConfig.SetWeight(MatchTypeEqual, 8.0)
+
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	err = engine.AddDimension(envConfig)
+	if err != nil {
+		t.Fatalf("Failed to add env dimension: %v", err)
+	}
+
+	// Add a two-dimensional rule with exact matches
+	rule := NewRule("two-dim-rule").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Dimension("env", "prod", MatchTypeEqual).
+		Build()
+
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Examine the forest structure
+	forestIndex := engine.matcher.getOrCreateForestIndex("", "")
+
+	t.Logf("=== TWO-DIMENSION FOREST STRUCTURE ===")
+	for matchType, trees := range forestIndex.Trees {
+		t.Logf("Trees for match type %s: %d trees", matchType, len(trees))
+		for i, tree := range trees {
+			t.Logf("  Tree %d: Level=%d, DimName=%s, Value=%s, Rules=%d", i, tree.Level, tree.DimensionName, tree.Value, len(tree.Rules))
+			t.Logf("    Branches: %d", len(tree.Branches))
+			for branchType, branch := range tree.Branches {
+				t.Logf("      Branch %s: %d children", branchType, len(branch.Children))
+				for childKey, child := range branch.Children {
+					t.Logf("        Child key='%s': Level=%d, DimName=%s, Value=%s, Rules=%d",
+						childKey, child.Level, child.DimensionName, child.Value, len(child.Rules))
+					// Check deeper levels
+					for subBranchType, subBranch := range child.Branches {
+						t.Logf("          SubBranch %s: %d children", subBranchType, len(subBranch.Children))
+						for subChildKey, subChild := range subBranch.Children {
+							t.Logf("            SubChild key='%s': Level=%d, DimName=%s, Value=%s, Rules=%d",
+								subChildKey, subChild.Level, subChild.DimensionName, subChild.Value, len(subChild.Rules))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Query for exact match
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+			"env":    "prod",
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	t.Logf("Found %d matches", len(matches))
+	for _, match := range matches {
+		t.Logf("  Match: %s (weight: %.1f)", match.Rule.ID, match.TotalWeight)
+	}
+
+	if len(matches) != 1 {
+		t.Errorf("Expected 1 match, got %d", len(matches))
+	}
+}
