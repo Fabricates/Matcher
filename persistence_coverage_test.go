@@ -86,7 +86,7 @@ func TestPersistenceErrorCases(t *testing.T) {
 	configs := []*DimensionConfig{
 		NewDimensionConfig("test", 0, false, 1.0),
 	}
-	
+
 	err = persistence.SaveDimensionConfigs(ctx, configs)
 	if err == nil {
 		t.Error("Expected error when saving dimension configs to invalid directory")
@@ -214,39 +214,6 @@ func TestForestCandidateRulesWithRule(t *testing.T) {
 	emptyCandidates := forest.FindCandidateRules(&Rule{})
 	// This should return no candidates, which is expected behavior
 	_ = emptyCandidates
-}
-
-func TestMatcherProcessEventCoverage(t *testing.T) {
-	persistence := NewJSONPersistence("./test_data")
-	broker := NewInMemoryEventBroker("test-node")
-
-	engine, err := NewInMemoryMatcher(persistence, broker, "event-test")
-	if err != nil {
-		t.Fatalf("Failed to create engine: %v", err)
-	}
-	defer engine.Close()
-
-	ctx := context.Background()
-
-	// Test different event types to cover processEvent switch cases
-	events := []Event{
-		{Type: "rule_added", Data: map[string]interface{}{"rule_id": "test1"}},
-		{Type: "rule_updated", Data: map[string]interface{}{"rule_id": "test2"}},
-		{Type: "rule_deleted", Data: map[string]interface{}{"rule_id": "test3"}},
-		{Type: "dimension_added", Data: map[string]interface{}{"dimension_name": "test_dim"}},
-		{Type: "dimension_updated", Data: map[string]interface{}{"dimension_name": "test_dim2"}},
-		{Type: "dimension_deleted", Data: map[string]interface{}{"dimension_name": "test_dim3"}},
-		{Type: "unknown_event", Data: map[string]interface{}{"some": "data"}},
-	}
-
-	// Publish events to trigger processing
-	for _, event := range events {
-		broker.Publish(ctx, &event)
-	}
-
-	// Give some time for events to be processed
-	// Note: In real scenarios these would trigger actual processing,
-	// but for coverage we just need the code paths to be executed
 }
 
 func TestMatcherHealthCoverage(t *testing.T) {

@@ -197,10 +197,10 @@ func generateDimensions(count int) []*DimensionConfig {
 	dimensions := make([]*DimensionConfig, count)
 	for i := 0; i < count; i++ {
 		dimensions[i] = NewDimensionConfig(
-			dimensionNames[i%len(dimensionNames)] + fmt.Sprintf("_%d", i/len(dimensionNames)),
+			dimensionNames[i%len(dimensionNames)]+fmt.Sprintf("_%d", i/len(dimensionNames)),
 			i,
-			i < 3,                        // First 3 dimensions are required
-			float64(10 - i%10),          // Varying weights
+			i < 3,            // First 3 dimensions are required
+			float64(10-i%10), // Varying weights
 		)
 	}
 	return dimensions
