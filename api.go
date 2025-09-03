@@ -137,6 +137,91 @@ func (me *MatcherEngine) UpdateRule(rule *Rule) error {
 	return me.matcher.updateRule(rule)
 }
 
+// UpdateRuleStatus updates only the status of an existing rule
+func (me *MatcherEngine) UpdateRuleStatus(ruleID string, status RuleStatus) error {
+	// Get the existing rule first
+	rule, err := me.GetRule(ruleID)
+	if err != nil {
+		return fmt.Errorf("rule not found: %w", err)
+	}
+
+	// Create a copy and update the status
+	updatedRule := &Rule{
+		ID:            rule.ID,
+		TenantID:      rule.TenantID,
+		ApplicationID: rule.ApplicationID,
+		Dimensions:    rule.Dimensions,
+		Metadata:      rule.Metadata,
+		Status:        status, // Update only the status
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	}
+
+	return me.UpdateRule(updatedRule)
+}
+
+// UpdateRuleMetadata updates only the metadata of an existing rule
+func (me *MatcherEngine) UpdateRuleMetadata(ruleID string, metadata map[string]string) error {
+	// Get the existing rule first
+	rule, err := me.GetRule(ruleID)
+	if err != nil {
+		return fmt.Errorf("rule not found: %w", err)
+	}
+
+	// Create a copy and update the metadata
+	updatedRule := &Rule{
+		ID:            rule.ID,
+		TenantID:      rule.TenantID,
+		ApplicationID: rule.ApplicationID,
+		Dimensions:    rule.Dimensions,
+		Metadata:      metadata, // Update only the metadata
+		Status:        rule.Status,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	}
+
+	return me.UpdateRule(updatedRule)
+}
+
+// GetRule retrieves a rule by ID
+func (me *MatcherEngine) GetRule(ruleID string) (*Rule, error) {
+	me.matcher.mu.RLock()
+	defer me.matcher.mu.RUnlock()
+
+	rule, exists := me.matcher.rules[ruleID]
+	if !exists {
+		return nil, fmt.Errorf("rule with ID '%s' not found", ruleID)
+	}
+
+	// Return a copy to prevent external modification
+	ruleCopy := &Rule{
+		ID:            rule.ID,
+		TenantID:      rule.TenantID,
+		ApplicationID: rule.ApplicationID,
+		Dimensions:    make([]*DimensionValue, len(rule.Dimensions)),
+		Metadata:      make(map[string]string),
+		Status:        rule.Status,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	}
+
+	// Deep copy dimensions
+	for i, dim := range rule.Dimensions {
+		ruleCopy.Dimensions[i] = &DimensionValue{
+			DimensionName: dim.DimensionName,
+			Value:         dim.Value,
+			MatchType:     dim.MatchType,
+		}
+	}
+
+	// Copy metadata
+	for k, v := range rule.Metadata {
+		ruleCopy.Metadata[k] = v
+	}
+
+	return ruleCopy, nil
+}
+
 // DeleteRule removes a rule by ID
 func (me *MatcherEngine) DeleteRule(ruleID string) error {
 	return me.matcher.DeleteRule(ruleID)

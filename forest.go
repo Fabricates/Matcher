@@ -594,7 +594,88 @@ func (rf *RuleForest) RemoveRule(rule *Rule) {
 	delete(rf.RuleIndex, rule.ID)
 }
 
-// cleanupEmptyNodes removes empty nodes from the forest
+// ReplaceRule atomically replaces one rule with another to prevent partial state visibility
+// This method ensures no intermediate state where both rules coexist in the forest
+func (rf *RuleForest) ReplaceRule(oldRule, newRule *Rule) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// Step 1: Remove old rule completely first
+	if oldRule != nil {
+		if nodes, exists := rf.RuleIndex[oldRule.ID]; exists {
+			for _, node := range nodes {
+				node.RemoveRule(oldRule.ID)
+			}
+			delete(rf.RuleIndex, oldRule.ID)
+		}
+	}
+
+	// Step 2: Clean up any empty nodes from old rule removal
+	rf.cleanupEmptyNodes()
+
+	// Step 3: Add new rule using standard logic
+	if newRule != nil && len(newRule.Dimensions) > 0 {
+		if len(rf.DimensionOrder) == 0 || len(newRule.Dimensions) != len(rf.DimensionOrder) {
+			rf.ensureDimensionsInOrder(newRule.Dimensions)
+		}
+
+		sortedDims := rf.sortDimensionsByOrder(newRule.Dimensions)
+		if len(sortedDims) > 0 {
+			firstDim := sortedDims[0]
+			var rootNode *SharedNode
+			rootNodes := rf.Trees[firstDim.MatchType]
+
+			for _, node := range rootNodes {
+				if node.DimensionName == firstDim.DimensionName && node.Value == firstDim.Value {
+					rootNode = node
+					break
+				}
+			}
+
+			if rootNode == nil {
+				rootNode = CreateSharedNode(0, firstDim.DimensionName, firstDim.Value)
+				rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
+
+				if firstDim.MatchType == MatchTypeEqual {
+					indexKey := firstDim.DimensionName + ":" + firstDim.Value
+					rf.EqualTreesIndex[indexKey] = rootNode
+				}
+			}
+
+			var ruleNodes []*SharedNode
+			ruleNodes = append(ruleNodes, rootNode)
+
+			current := rootNode
+			for i := 1; i < len(sortedDims); i++ {
+				dim := sortedDims[i]
+				matchType := dim.MatchType
+
+				branch, exists := current.Branches[matchType]
+				if !exists {
+					branch = &MatchBranch{
+						MatchType: matchType,
+						Rules:     []*Rule{},
+						Children:  make(map[string]*SharedNode),
+					}
+					current.Branches[matchType] = branch
+				}
+
+				child, exists := branch.Children[dim.Value]
+				if !exists {
+					child = CreateSharedNode(i, dim.DimensionName, dim.Value)
+					branch.Children[dim.Value] = child
+				}
+
+				ruleNodes = append(ruleNodes, child)
+				current = child
+			}
+
+			finalMatchType := sortedDims[len(sortedDims)-1].MatchType
+			current.AddRule(newRule, finalMatchType)
+			rf.RuleIndex[newRule.ID] = ruleNodes
+		}
+	}
+} // cleanupEmptyNodes removes empty nodes from the forest
 func (rf *RuleForest) cleanupEmptyNodes() {
 	// This is a simplified cleanup - in practice, you might want more sophisticated cleanup
 	for matchType, trees := range rf.Trees {

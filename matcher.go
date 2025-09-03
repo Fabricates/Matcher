@@ -207,6 +207,10 @@ func (m *InMemoryMatcher) processEvent(event *Event) error {
 		}
 		return m.deleteDimension(dimEvent.Dimension.Name)
 
+	case EventTypeRebuild:
+		// For rebuild events, reload entire state from persistence
+		return m.Rebuild()
+
 	default:
 		return fmt.Errorf("unknown event type: %s", event.Type)
 	}
@@ -266,8 +270,60 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	return nil
 }
 
+// UpdateRule updates an existing rule (public method)
+func (m *InMemoryMatcher) UpdateRule(rule *Rule) error {
+	return m.updateRule(rule)
+}
+
+// GetRule retrieves a rule by ID (public method)
+func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	rule, exists := m.rules[ruleID]
+	if !exists {
+		return nil, fmt.Errorf("rule with ID '%s' not found", ruleID)
+	}
+
+	// Return a copy to prevent external modification
+	ruleCopy := &Rule{
+		ID:            rule.ID,
+		TenantID:      rule.TenantID,
+		ApplicationID: rule.ApplicationID,
+		Dimensions:    make([]*DimensionValue, len(rule.Dimensions)),
+		Metadata:      make(map[string]string),
+		Status:        rule.Status,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	}
+
+	// Deep copy dimensions
+	for i, dim := range rule.Dimensions {
+		ruleCopy.Dimensions[i] = &DimensionValue{
+			DimensionName: dim.DimensionName,
+			Value:         dim.Value,
+			MatchType:     dim.MatchType,
+		}
+	}
+
+	// Copy metadata
+	for k, v := range rule.Metadata {
+		ruleCopy.Metadata[k] = v
+	}
+
+	// Copy manual weight if it exists
+	if rule.ManualWeight != nil {
+		weight := *rule.ManualWeight
+		ruleCopy.ManualWeight = &weight
+	}
+
+	return ruleCopy, nil
+}
+
 // updateRule updates an existing rule
 func (m *InMemoryMatcher) updateRule(rule *Rule) error {
+	// Use write lock to ensure complete atomicity during updates
+	// This prevents any concurrent queries from seeing partial state
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -276,46 +332,56 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 		return fmt.Errorf("invalid rule: %w", err)
 	}
 
-	// Remove old rule if exists
-	if oldRule, exists := m.rules[rule.ID]; exists {
-		// Remove from old tenant's forest
-		oldForestIndex := m.getForestIndex(oldRule.TenantID, oldRule.ApplicationID)
-		if oldForestIndex != nil {
-			oldForestIndex.RemoveRule(oldRule)
-		}
-
-		// Remove from old tenant's tracking
-		oldKey := m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
-		if m.tenantRules[oldKey] != nil {
-			delete(m.tenantRules[oldKey], rule.ID)
-		}
-	}
-
 	// Set update timestamp
 	rule.UpdatedAt = time.Now()
 
-	// Add updated rule
+	// Get old rule and forest index info before any modifications
+	var oldRule *Rule
+	var oldForestIndex *ForestIndex
+	var oldKey string
+
+	if existingRule, exists := m.rules[rule.ID]; exists {
+		oldRule = existingRule
+		oldForestIndex = m.getForestIndex(oldRule.TenantID, oldRule.ApplicationID)
+		oldKey = m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
+	}
+
+	// Get the new tenant key and forest index
+	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
+	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
+
+	// ATOMIC UPDATE STRATEGY: With write lock held, perform all operations sequentially
+	// This ensures no concurrent FindAllMatches can see partial state
+
+	// Step 1: Remove old rule from forest first to prevent double-matching
+	if oldRule != nil && oldForestIndex != nil {
+		oldForestIndex.RemoveRule(oldRule)
+	}
+
+	// Step 2: Update m.rules immediately - this is now the authoritative source
 	m.rules[rule.ID] = rule
 
-	// Add to tenant-specific tracking
-	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
+	// Step 3: Add new rule to forest
+	forestIndex.AddRule(rule)
+
+	// Step 4: Update tenant tracking
+	if oldRule != nil && oldKey != key && m.tenantRules[oldKey] != nil {
+		delete(m.tenantRules[oldKey], rule.ID)
+	}
+
 	if m.tenantRules[key] == nil {
 		m.tenantRules[key] = make(map[string]*Rule)
 	}
 	m.tenantRules[key][rule.ID] = rule
 
-	// Add to appropriate forest index
-	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-	forestIndex.AddRule(rule)
-
-	// Clear cache
+	// Step 5: Clear cache
 	m.cache.Clear()
 
-	// Update stats
+	// Step 6: Update stats
 	m.stats.TotalRules = len(m.rules)
 	m.stats.LastUpdated = time.Now()
 
-	// Publish event to message queue
+	// Step 7: Publish event to message queue
 	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeRuleUpdated,
@@ -516,20 +582,68 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 
 	var matches []*MatchResult
 
-	// Validate each candidate
-	for _, rule := range candidates {
-		if m.isFullMatch(rule.Rule, query) {
-			matchedDims := m.countMatchedDimensions(rule.Rule, query)
+	// ATOMIC CONSISTENCY: Double-check approach to prevent race conditions
+	// For each candidate from forest, verify it actually matches the query dimensions
+	// AND exists in m.rules AND its dimensions in m.rules still match the query
+	for _, candidate := range candidates {
+		// Check 1: Rule must exist in m.rules (authoritative source)
+		actualRule, exists := m.rules[candidate.Rule.ID]
+		if !exists {
+			continue // Skip rules that don't exist in m.rules (being updated)
+		}
 
-			matches = append(matches, &MatchResult{
-				Rule:        rule.Rule,
-				TotalWeight: rule.Weight,
-				MatchedDims: matchedDims,
-			})
+		// Check 2: The rule from m.rules must actually match this query
+		// This prevents returning rules that matched old dimensions but not current ones
+		if !m.isFullMatch(actualRule, query) {
+			continue // Skip rules whose current dimensions don't match this query
+		}
+
+		// Check 3: Verify the candidate rule from forest has same dimensions as m.rules
+		// This catches cases where forest has stale entries during updates
+		if !m.dimensionsEqual(candidate.Rule, actualRule) {
+			continue // Skip stale forest entries
+		}
+
+		matchedDims := m.countMatchedDimensions(actualRule, query)
+
+		matches = append(matches, &MatchResult{
+			Rule:        actualRule, // Always use the current rule from m.rules
+			TotalWeight: candidate.Weight,
+			MatchedDims: matchedDims,
+		})
+	}
+	return matches, nil
+}
+
+// dimensionsEqual checks if two rules have identical dimensions
+func (m *InMemoryMatcher) dimensionsEqual(rule1, rule2 *Rule) bool {
+	if len(rule1.Dimensions) != len(rule2.Dimensions) {
+		return false
+	}
+
+	// Create maps for comparison
+	dims1 := make(map[string]*DimensionValue)
+	dims2 := make(map[string]*DimensionValue)
+
+	for _, dim := range rule1.Dimensions {
+		dims1[dim.DimensionName] = dim
+	}
+	for _, dim := range rule2.Dimensions {
+		dims2[dim.DimensionName] = dim
+	}
+
+	if len(dims1) != len(dims2) {
+		return false
+	}
+
+	for key, dim1 := range dims1 {
+		dim2, exists := dims2[key]
+		if !exists || dim1.Value != dim2.Value || dim1.MatchType != dim2.MatchType {
+			return false
 		}
 	}
 
-	return matches, nil
+	return true
 }
 
 // isFullMatch checks if a rule fully matches a query
