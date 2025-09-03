@@ -155,6 +155,7 @@ const (
 	EventTypeDimensionAdded   EventType = "dimension_added"
 	EventTypeDimensionUpdated EventType = "dimension_updated"
 	EventTypeDimensionDeleted EventType = "dimension_deleted"
+	EventTypeRebuild          EventType = "rebuild" // Indicates full state rebuild needed
 )
 
 // Event represents an event from the message queue

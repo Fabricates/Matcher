@@ -233,6 +233,7 @@ func (r *RedisCASBroker) pollForEvents(ctx context.Context) {
 }
 
 // checkForNewEvents checks for new events since last known timestamp
+// For simplicity, all events are treated as rebuild events
 func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 	// Get current event from Redis
 	eventData, err := r.client.Get(ctx, r.eventKey).Result()
@@ -263,9 +264,17 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 		return nil
 	}
 
-	// Send event to subscriber
+	// Convert any event to a rebuild event for simplicity
+	rebuildEvent := &Event{
+		Type:      EventTypeRebuild,
+		Timestamp: latestEvent.Event.Timestamp,
+		NodeID:    latestEvent.NodeID,
+		Data:      nil, // No specific data needed for rebuild
+	}
+
+	// Send rebuild event to subscriber
 	select {
-	case r.subscription <- latestEvent.Event:
+	case r.subscription <- rebuildEvent:
 		// Event sent successfully
 		r.lastTimestamp = latestEvent.Timestamp
 	case <-ctx.Done():

@@ -39,20 +39,362 @@ func TestAPIUpdateRule(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add dimension configurations
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	envConfig := NewDimensionConfig("env", 1, false, 3.0)
+	envConfig.SetWeight(MatchTypeEqual, 8.0)
+	err = engine.AddDimension(envConfig)
+	if err != nil {
+		t.Fatalf("Failed to add env dimension: %v", err)
+	}
+
 	// Add a rule first
-	rule := NewRule("api-update-test").
+	originalRule := NewRule("api-update-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Dimension("env", "prod", MatchTypeEqual).
+		Build()
+
+	if err := engine.AddRule(originalRule); err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Verify the original rule works
+	query := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+			"env":    "prod",
+		},
+	}
+
+	matches, err := engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed: %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("Expected 1 match for original rule, got %d", len(matches))
+	}
+
+	if matches[0].Rule.ID != "api-update-test" {
+		t.Errorf("Expected rule 'api-update-test', got '%s'", matches[0].Rule.ID)
+	}
+
+	// Update the rule with different dimensions
+	updatedRule := NewRule("api-update-test").
+		Dimension("region", "us-east", MatchTypeEqual).
+		Dimension("env", "staging", MatchTypeEqual).
+		Build()
+
+	if err := engine.UpdateRule(updatedRule); err != nil {
+		t.Errorf("UpdateRule failed: %v", err)
+	}
+
+	// Verify the original query no longer matches
+	matches, err = engine.FindAllMatches(query)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed after update: %v", err)
+	}
+
+	if len(matches) != 0 {
+		t.Errorf("Expected 0 matches for original query after update, got %d", len(matches))
+	}
+
+	// Verify the updated rule works with new query
+	updatedQuery := &QueryRule{
+		Values: map[string]string{
+			"region": "us-east",
+			"env":    "staging",
+		},
+	}
+
+	matches, err = engine.FindAllMatches(updatedQuery)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed for updated query: %v", err)
+	}
+
+	if len(matches) != 1 {
+		t.Fatalf("Expected 1 match for updated rule, got %d", len(matches))
+	}
+
+	if matches[0].Rule.ID != "api-update-test" {
+		t.Errorf("Expected updated rule 'api-update-test', got '%s'", matches[0].Rule.ID)
+	}
+
+	// Test updating a non-existent rule
+	nonExistentRule := NewRule("non-existent").
 		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
+
+	// This should not fail - updateRule handles non-existent rules gracefully
+	if err := engine.UpdateRule(nonExistentRule); err != nil {
+		t.Errorf("UpdateRule should handle non-existent rules gracefully: %v", err)
+	}
+
+	// Verify the non-existent rule was added
+	nonExistentQuery := &QueryRule{
+		Values: map[string]string{
+			"region": "us-west",
+		},
+	}
+
+	matches, err = engine.FindAllMatches(nonExistentQuery)
+	if err != nil {
+		t.Fatalf("FindAllMatches failed for non-existent rule query: %v", err)
+	}
+
+	// Should find the newly added rule
+	found := false
+	for _, match := range matches {
+		if match.Rule.ID == "non-existent" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected to find the non-existent rule after update")
+	}
+}
+
+func TestAPIUpdateRuleStatus(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "matcher-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Add dimension configuration
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a rule
+	rule := NewRule("status-update-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
 	if err := engine.AddRule(rule); err != nil {
 		t.Fatalf("Failed to add rule: %v", err)
 	}
 
-	// Update the rule
-	updatedRule := NewRule("api-update-test").
-		Dimension("region", "us-east", MatchTypeEqual).
+	// Update the rule status to draft
+	if err := engine.UpdateRuleStatus("status-update-test", RuleStatusDraft); err != nil {
+		t.Errorf("UpdateRuleStatus failed: %v", err)
+	}
+
+	// Verify the rule was updated
+	updatedRule, err := engine.GetRule("status-update-test")
+	if err != nil {
+		t.Fatalf("Failed to get updated rule: %v", err)
+	}
+
+	if updatedRule.Status != RuleStatusDraft {
+		t.Errorf("Expected status %s, got %s", RuleStatusDraft, updatedRule.Status)
+	}
+
+	// Verify other fields remained unchanged
+	if updatedRule.ID != "status-update-test" {
+		t.Errorf("Expected ID 'status-update-test', got '%s'", updatedRule.ID)
+	}
+
+	if len(updatedRule.Dimensions) != 1 {
+		t.Errorf("Expected 1 dimension, got %d", len(updatedRule.Dimensions))
+	}
+
+	if updatedRule.Dimensions[0].DimensionName != "region" {
+		t.Errorf("Expected dimension 'region', got '%s'", updatedRule.Dimensions[0].DimensionName)
+	}
+
+	// Test updating non-existent rule
+	err = engine.UpdateRuleStatus("non-existent", RuleStatusWorking)
+	if err == nil {
+		t.Error("Expected error when updating non-existent rule status")
+	}
+}
+
+func TestAPIUpdateRuleMetadata(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "matcher-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Add dimension configuration
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a rule with initial metadata
+	rule := NewRule("metadata-update-test").
+		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
-	if err := engine.UpdateRule(updatedRule); err != nil {
-		t.Errorf("UpdateRule failed: %v", err)
+
+	rule.Metadata = map[string]string{
+		"owner":       "team-alpha",
+		"description": "original description",
+	}
+
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Update the rule metadata
+	newMetadata := map[string]string{
+		"owner":       "team-beta",
+		"description": "updated description",
+		"priority":    "high",
+	}
+
+	if err := engine.UpdateRuleMetadata("metadata-update-test", newMetadata); err != nil {
+		t.Errorf("UpdateRuleMetadata failed: %v", err)
+	}
+
+	// Verify the rule was updated
+	updatedRule, err := engine.GetRule("metadata-update-test")
+	if err != nil {
+		t.Fatalf("Failed to get updated rule: %v", err)
+	}
+
+	if updatedRule.Metadata["owner"] != "team-beta" {
+		t.Errorf("Expected owner 'team-beta', got '%s'", updatedRule.Metadata["owner"])
+	}
+
+	if updatedRule.Metadata["description"] != "updated description" {
+		t.Errorf("Expected description 'updated description', got '%s'", updatedRule.Metadata["description"])
+	}
+
+	if updatedRule.Metadata["priority"] != "high" {
+		t.Errorf("Expected priority 'high', got '%s'", updatedRule.Metadata["priority"])
+	}
+
+	// Verify other fields remained unchanged
+	if updatedRule.ID != "metadata-update-test" {
+		t.Errorf("Expected ID 'metadata-update-test', got '%s'", updatedRule.ID)
+	}
+
+	if len(updatedRule.Dimensions) != 1 {
+		t.Errorf("Expected 1 dimension, got %d", len(updatedRule.Dimensions))
+	}
+
+	// Test updating non-existent rule
+	err = engine.UpdateRuleMetadata("non-existent", newMetadata)
+	if err == nil {
+		t.Error("Expected error when updating non-existent rule metadata")
+	}
+}
+
+func TestAPIGetRule(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "matcher-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Add dimension configuration
+	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)
+	err = engine.AddDimension(regionConfig)
+	if err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	// Add a rule
+	originalRule := NewRule("get-rule-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
+	originalRule.Metadata = map[string]string{
+		"owner": "team-alpha",
+		"type":  "routing",
+	}
+	originalRule.Status = RuleStatusWorking
+
+	if err := engine.AddRule(originalRule); err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Get the rule
+	retrievedRule, err := engine.GetRule("get-rule-test")
+	if err != nil {
+		t.Fatalf("GetRule failed: %v", err)
+	}
+
+	// Verify all fields
+	if retrievedRule.ID != "get-rule-test" {
+		t.Errorf("Expected ID 'get-rule-test', got '%s'", retrievedRule.ID)
+	}
+
+	if retrievedRule.Status != RuleStatusWorking {
+		t.Errorf("Expected status %s, got %s", RuleStatusWorking, retrievedRule.Status)
+	}
+
+	if len(retrievedRule.Dimensions) != 1 {
+		t.Errorf("Expected 1 dimension, got %d", len(retrievedRule.Dimensions))
+	}
+
+	if retrievedRule.Dimensions[0].DimensionName != "region" {
+		t.Errorf("Expected dimension 'region', got '%s'", retrievedRule.Dimensions[0].DimensionName)
+	}
+
+	if retrievedRule.Dimensions[0].Value != "us-west" {
+		t.Errorf("Expected value 'us-west', got '%s'", retrievedRule.Dimensions[0].Value)
+	}
+
+	if retrievedRule.Metadata["owner"] != "team-alpha" {
+		t.Errorf("Expected owner 'team-alpha', got '%s'", retrievedRule.Metadata["owner"])
+	}
+
+	if retrievedRule.Metadata["type"] != "routing" {
+		t.Errorf("Expected type 'routing', got '%s'", retrievedRule.Metadata["type"])
+	}
+
+	// Test getting non-existent rule
+	_, err = engine.GetRule("non-existent")
+	if err == nil {
+		t.Error("Expected error when getting non-existent rule")
+	}
+
+	// Test that the returned rule is a copy (modifying it shouldn't affect the original)
+	retrievedRule.Metadata["owner"] = "modified"
+
+	// Get the rule again to verify it wasn't modified
+	againRule, err := engine.GetRule("get-rule-test")
+	if err != nil {
+		t.Fatalf("GetRule failed on second call: %v", err)
+	}
+
+	if againRule.Metadata["owner"] != "team-alpha" {
+		t.Error("Rule was modified when it should have been a copy")
 	}
 }
 
