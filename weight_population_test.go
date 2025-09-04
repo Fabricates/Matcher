@@ -14,12 +14,12 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension configurations with specific weights
-	err = engine.AddDimension(NewDimensionConfig("product", 0, false, 15.0))
+	err = engine.AddDimension(NewDimensionConfig("product", 0, false))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(NewDimensionConfig("environment", 1, false, 8.0))
+	err = engine.AddDimension(NewDimensionConfig("environment", 1, false))
 	if err != nil {
 		t.Fatalf("Failed to add environment dimension: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 	}
 
 	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
+	totalWeight := rule.CalculateTotalWeight(engine.getDimensionsMap())
 	expectedWeight := 15.0 + 8.0
 	if totalWeight != expectedWeight {
 		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
@@ -88,7 +88,7 @@ func TestDefaultWeightWhenNoDimensionConfig(t *testing.T) {
 	}
 
 	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
+	totalWeight := rule.CalculateTotalWeight(engine.getDimensionsMap())
 	expectedWeight := 1.0 + 1.0
 	if totalWeight != expectedWeight {
 		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
@@ -105,12 +105,12 @@ func TestDimensionWithWeightBackwardCompatibility(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension configurations with specific weights
-	err = engine.AddDimension(NewDimensionConfig("product", 0, false, 15.0))
+	err = engine.AddDimension(NewDimensionConfig("product", 0, false))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(NewDimensionConfig("environment", 1, false, 5.0))
+	err = engine.AddDimension(NewDimensionConfig("environment", 1, false))
 	if err != nil {
 		t.Fatalf("Failed to add environment dimension: %v", err)
 	}

@@ -3,7 +3,6 @@ package matcher
 import (
 	"fmt"
 	"sort"
-	"sync"
 )
 
 // SharedNode represents a node in the forest where rules share paths
@@ -14,7 +13,7 @@ type SharedNode struct {
 	Value         string                     `json:"value"`          // The value for this dimension
 	Rules         []*Rule                    `json:"rules"`          // All rules that terminate at this node
 	Branches      map[MatchType]*MatchBranch `json:"branches"`       // Branches organized by match type
-	mu            sync.RWMutex
+	// NOTE: No mutex - all locking is handled at the matcher level
 }
 
 // MatchBranch represents a branch for a specific match type
@@ -33,7 +32,7 @@ type RuleForest struct {
 	DimensionOrder   []string                    `json:"dimension_order"`          // Order of dimensions for tree traversal
 	RuleIndex        map[string][]*SharedNode    `json:"rule_index"`               // Index of rules to their nodes for quick removal
 	DimensionConfigs map[string]*DimensionConfig `json:"-"`                        // Reference to dimension configurations (not serialized)
-	mu               sync.RWMutex
+	// NOTE: No mutex - all locking is handled at the matcher level
 }
 
 // CreateSharedNode creates a shared node
@@ -49,8 +48,6 @@ func CreateSharedNode(level int, dimensionName, value string) *SharedNode {
 
 // AddRule adds a rule to this node for a specific match type (only for leaf nodes)
 func (sn *SharedNode) AddRule(rule *Rule, matchType MatchType) {
-	sn.mu.Lock()
-	defer sn.mu.Unlock()
 
 	// Add to general rules list for backward compatibility
 	sn.Rules = append(sn.Rules, rule)
@@ -69,8 +66,6 @@ func (sn *SharedNode) AddRule(rule *Rule, matchType MatchType) {
 
 // RemoveRule removes a rule from this node
 func (sn *SharedNode) RemoveRule(ruleID string) bool {
-	sn.mu.Lock()
-	defer sn.mu.Unlock()
 
 	// Remove from general rules list
 	for i, rule := range sn.Rules {
@@ -136,8 +131,7 @@ func (rf *RuleForest) GetDefaultDimensionOrder() []string {
 
 // GetDimensionOrder returns the current dimension order
 func (rf *RuleForest) GetDimensionOrder() []string {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
+	// NOTE: Locking is handled at the matcher level
 
 	result := make([]string, len(rf.DimensionOrder))
 	copy(result, rf.DimensionOrder)
@@ -146,8 +140,6 @@ func (rf *RuleForest) GetDimensionOrder() []string {
 
 // SetDimensionOrder sets the dimension order for the forest
 func (rf *RuleForest) SetDimensionOrder(order []string) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 
 	rf.DimensionOrder = make([]string, len(order))
 	copy(rf.DimensionOrder, order)
@@ -155,9 +147,6 @@ func (rf *RuleForest) SetDimensionOrder(order []string) {
 
 // AddRule adds a rule to the forest following the dimension order
 func (rf *RuleForest) AddRule(rule *Rule) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	if len(rule.Dimensions) == 0 {
 		return
 	}
@@ -170,7 +159,6 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 
 	// Sort rule dimensions according to our dimension order
 	sortedDims := rf.sortDimensionsByOrder(rule.Dimensions)
-
 	if len(sortedDims) == 0 {
 		return
 	}
@@ -310,8 +298,6 @@ func (rf *RuleForest) sortDimensionsByOrder(dimensions []*DimensionValue) []*Dim
 
 // findCandidateRulesWithQueryRule is the actual implementation for QueryRule
 func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWithWeight {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
 
 	candidateRules := make([]RuleWithWeight, 0)
 
@@ -417,7 +403,6 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 	}
 
 	// Collect rules from this node (since rules can terminate at any depth)
-	node.mu.RLock()
 	for _, rule := range node.Rules {
 		// Filter by rule status unless IncludeAllRules is true (only collect 'working' rules)
 		// Consider empty status as working (for backward compatibility)
@@ -431,10 +416,8 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 			rf.insertRuleByWeight(candidateRules, rule, dimensionConfigs)
 		}
 	}
-	node.mu.RUnlock()
 
 	// Continue searching deeper through branches (don't stop at dimension order limit)
-	node.mu.RLock()
 	if hasQueryValue {
 		// If query specifies this dimension, search all branches
 		for branchMatchType, branch := range node.Branches {
@@ -468,7 +451,6 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 			}
 		}
 	}
-	node.mu.RUnlock()
 }
 
 // resolveDimensionConfigs merges dynamic configs with initialized configs for a query
@@ -573,8 +555,6 @@ func (rf *RuleForest) matchesValue(queryValue, ruleValue string, matchType Match
 
 // RemoveRule removes a rule from the forest
 func (rf *RuleForest) RemoveRule(rule *Rule) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 
 	// Get nodes where this rule is stored
 	nodes, exists := rf.RuleIndex[rule.ID]
@@ -597,8 +577,6 @@ func (rf *RuleForest) RemoveRule(rule *Rule) {
 // ReplaceRule atomically replaces one rule with another to prevent partial state visibility
 // This method ensures no intermediate state where both rules coexist in the forest
 func (rf *RuleForest) ReplaceRule(oldRule, newRule *Rule) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
 
 	// Step 1: Remove old rule completely first
 	if oldRule != nil {
@@ -695,8 +673,6 @@ func (rf *RuleForest) cleanupEmptyNodes() {
 
 // hasRulesOrChildren checks if a node has rules or non-empty children
 func (rf *RuleForest) hasRulesOrChildren(node *SharedNode) bool {
-	node.mu.RLock()
-	defer node.mu.RUnlock()
 
 	if len(node.Rules) > 0 {
 		return true
@@ -713,8 +689,6 @@ func (rf *RuleForest) hasRulesOrChildren(node *SharedNode) bool {
 
 // GetStats returns statistics about the forest
 func (rf *RuleForest) GetStats() map[string]interface{} {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
 
 	stats := make(map[string]interface{})
 
@@ -756,9 +730,6 @@ func (rf *RuleForest) countNodesAndSharing(node *SharedNode, levelCounts map[int
 	if node == nil {
 		return 0, 0, 0, 0
 	}
-
-	node.mu.RLock()
-	defer node.mu.RUnlock()
 
 	count := 1
 	sharedNodes := 0

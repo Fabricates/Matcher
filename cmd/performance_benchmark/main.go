@@ -274,8 +274,7 @@ func generateRealisticDimensions(count int) []*matcher.DimensionConfig {
 		dimensions[i] = matcher.NewDimensionConfig(
 			name,
 			i,
-			i < 3,              // First 3 dimensions required
-			float64(20-(i%20)), // Weights from 20 down to 1, cycling if needed
+			i < 3, // First 3 dimensions required
 		)
 	}
 	return dimensions

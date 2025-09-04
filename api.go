@@ -185,41 +185,7 @@ func (me *MatcherEngine) UpdateRuleMetadata(ruleID string, metadata map[string]s
 
 // GetRule retrieves a rule by ID
 func (me *MatcherEngine) GetRule(ruleID string) (*Rule, error) {
-	me.matcher.mu.RLock()
-	defer me.matcher.mu.RUnlock()
-
-	rule, exists := me.matcher.rules[ruleID]
-	if !exists {
-		return nil, fmt.Errorf("rule with ID '%s' not found", ruleID)
-	}
-
-	// Return a copy to prevent external modification
-	ruleCopy := &Rule{
-		ID:            rule.ID,
-		TenantID:      rule.TenantID,
-		ApplicationID: rule.ApplicationID,
-		Dimensions:    make([]*DimensionValue, len(rule.Dimensions)),
-		Metadata:      make(map[string]string),
-		Status:        rule.Status,
-		CreatedAt:     rule.CreatedAt,
-		UpdatedAt:     rule.UpdatedAt,
-	}
-
-	// Deep copy dimensions
-	for i, dim := range rule.Dimensions {
-		ruleCopy.Dimensions[i] = &DimensionValue{
-			DimensionName: dim.DimensionName,
-			Value:         dim.Value,
-			MatchType:     dim.MatchType,
-		}
-	}
-
-	// Copy metadata
-	for k, v := range rule.Metadata {
-		ruleCopy.Metadata[k] = v
-	}
-
-	return ruleCopy, nil
+	return me.matcher.GetRule(ruleID)
 }
 
 // DeleteRule removes a rule by ID
@@ -235,9 +201,7 @@ func (me *MatcherEngine) AddDimension(config *DimensionConfig) error {
 // SetAllowDuplicateWeights configures whether rules with duplicate weights are allowed
 // By default, duplicate weights are not allowed to ensure deterministic matching
 func (me *MatcherEngine) SetAllowDuplicateWeights(allow bool) {
-	me.matcher.mu.Lock()
-	defer me.matcher.mu.Unlock()
-	me.matcher.allowDuplicateWeights = allow
+	me.matcher.SetAllowDuplicateWeights(allow)
 }
 
 // FindBestMatch finds the best matching rule for a query
@@ -430,20 +394,7 @@ func CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID stri
 
 // GetForestStats returns detailed forest index statistics
 func (me *MatcherEngine) GetForestStats() map[string]interface{} {
-	me.matcher.mu.RLock()
-	defer me.matcher.mu.RUnlock()
-
-	stats := make(map[string]interface{})
-
-	for key, forestIndex := range me.matcher.forestIndexes {
-		stats[key] = forestIndex.GetStats()
-	}
-
-	// Add summary stats
-	stats["total_forests"] = len(me.matcher.forestIndexes)
-	stats["total_rules"] = len(me.matcher.rules)
-
-	return stats
+	return me.matcher.GetForestStats()
 }
 
 // ClearCache clears the query cache

@@ -17,7 +17,7 @@ func TestSimpleAtomicUpdate(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension config
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	err = engine.AddDimension(regionConfig)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestUpdateRuleTemporaryUnavailability(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension config
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	err = engine.AddDimension(regionConfig)
 	if err != nil {

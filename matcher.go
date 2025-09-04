@@ -5,23 +5,24 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // InMemoryMatcher implements the core matching logic using forest indexes
 type InMemoryMatcher struct {
-	forestIndexes         map[string]*ForestIndex     // tenant_app_key -> ForestIndex
-	dimensionConfigs      map[string]*DimensionConfig // dimension_name -> config (global or scoped)
-	rules                 map[string]*Rule            // rule_id -> rule
-	tenantRules           map[string]map[string]*Rule // tenant_app_key -> rule_id -> rule
+	forestIndexes         *sync.Map // tenant_app_key -> *ForestIndex
+	dimensions            *sync.Map // dimension_name -> *DimensionConfig (global or scoped)
+	rules                 *sync.Map // rule_id -> *Rule
 	stats                 *MatcherStats
 	cache                 *QueryCache
 	persistence           PersistenceInterface
 	broker                Broker // Changed from eventSub to eventBroker
 	eventsChan            chan *Event
-	nodeID                string // Node identifier for filtering events
-	allowDuplicateWeights bool   // When false (default), prevents rules with same weight
-	mu                    sync.RWMutex
+	nodeID                string    // Node identifier for filtering events
+	allowDuplicateWeights bool      // When false (default), prevents rules with same weight
+	forestLocks           *sync.Map // tenant_app_key -> *sync.RWMutex
+	mu                    *sync.RWMutex
 	ctx                   context.Context
 	cancel                context.CancelFunc
 }
@@ -31,16 +32,17 @@ func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	matcher := &InMemoryMatcher{
-		forestIndexes:    make(map[string]*ForestIndex),
-		dimensionConfigs: make(map[string]*DimensionConfig),
-		rules:            make(map[string]*Rule),
-		tenantRules:      make(map[string]map[string]*Rule),
+		forestIndexes: &sync.Map{},
+		dimensions:    &sync.Map{},
+		rules:         &sync.Map{},
 		stats: &MatcherStats{
 			LastUpdated: time.Now(),
 		},
 		cache:       NewQueryCache(1000, 10*time.Minute), // 1000 entries, 10 min TTL
 		persistence: persistence,
 		broker:      broker,
+		forestLocks: &sync.Map{},
+		mu:          &sync.RWMutex{},
 		eventsChan:  make(chan *Event, 100),
 		nodeID:      nodeID,
 		ctx:         ctx,
@@ -72,38 +74,69 @@ func (m *InMemoryMatcher) getTenantKey(tenantID, applicationID string) string {
 	return fmt.Sprintf("%s:%s", tenantID, applicationID)
 }
 
+// getDimensionsMap converts sync.Map to regular map for functions that need it
+func (m *InMemoryMatcher) getDimensionsMap() map[string]*DimensionConfig {
+	result := make(map[string]*DimensionConfig)
+	return rlock(m.mu, func() map[string]*DimensionConfig {
+		m.dimensions.Range(func(key, value any) bool {
+			result[key.(string)] = value.(*DimensionConfig)
+			return true
+		})
+		return result
+	})
+}
+
+// syncMapLen counts entries in a sync.Map
+func syncMapLen(sm *sync.Map) int {
+	count := 0
+	sm.Range(func(key, value any) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+// updateStats safely updates the matcher statistics
+func (m *InMemoryMatcher) updateStats() {
+	wlock(m.mu, func() any {
+		m.stats.TotalRules = syncMapLen(m.rules)
+		m.stats.TotalDimensions = syncMapLen(m.dimensions)
+		m.stats.LastUpdated = time.Now()
+		return nil
+	})
+}
+
 // getOrCreateForestIndex gets or creates a forest index for the specified tenant/application
 func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string) *ForestIndex {
 	key := m.getTenantKey(tenantID, applicationID)
 
-	if forestIndex, exists := m.forestIndexes[key]; exists {
-		return forestIndex
+	if forestIndexVal, exists := m.forestIndexes.Load(key); exists {
+		return forestIndexVal.(*ForestIndex)
 	}
 
 	// Create new forest index for this tenant/application
-	newForest := CreateRuleForestWithTenant(tenantID, applicationID, m.dimensionConfigs)
-	forestIndex := &ForestIndex{RuleForest: newForest}
-	m.forestIndexes[key] = forestIndex
-
-	// Initialize tenant rules map if needed
-	if m.tenantRules[key] == nil {
-		m.tenantRules[key] = make(map[string]*Rule)
-	}
-
-	return forestIndex
+	return m.wforest(key, func() any {
+		newForest := CreateRuleForestWithTenant(tenantID, applicationID, m.getDimensionsMap())
+		forestIndex := &ForestIndex{RuleForest: newForest}
+		m.forestIndexes.Store(key, forestIndex)
+		return forestIndex
+	}).(*ForestIndex)
 }
 
 // getForestIndex gets the forest index for the specified tenant/application (read-only)
 func (m *InMemoryMatcher) getForestIndex(tenantID, applicationID string) *ForestIndex {
 	key := m.getTenantKey(tenantID, applicationID)
-	return m.forestIndexes[key]
+
+	return m.rforest(key, func() any {
+		if forestIndexVal, exists := m.forestIndexes.Load(key); exists {
+			return forestIndexVal.(*ForestIndex)
+		}
+		return nil
+	}).(*ForestIndex)
 }
 
 // loadFromPersistence loads rules and dimensions from persistence layer
 func (m *InMemoryMatcher) loadFromPersistence() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Load dimension configurations
 	configs, err := m.persistence.LoadDimensionConfigs(m.ctx)
 	if err != nil {
@@ -112,7 +145,7 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 
 	// Initialize dimensions
 	for _, config := range configs {
-		m.dimensionConfigs[config.Name] = config
+		m.dimensions.Store(config.Name, config)
 		// Initialize dimensions for the appropriate tenant/application forest
 		forestIndex := m.getOrCreateForestIndex(config.TenantID, config.ApplicationID)
 		forestIndex.InitializeDimension(config.Name)
@@ -126,22 +159,21 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 
 	// Add rules to appropriate indexes
 	for _, rule := range rules {
-		m.rules[rule.ID] = rule
+		m.rules.Store(rule.ID, rule)
 
 		// Add to tenant-specific tracking
 		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
-		if m.tenantRules[key] == nil {
-			m.tenantRules[key] = make(map[string]*Rule)
-		}
-		m.tenantRules[key][rule.ID] = rule
 
 		// Add to appropriate forest index
-		forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-		forestIndex.AddRule(rule)
+		m.wforest(key, func() any {
+			forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
+			forestIndex.AddRule(rule)
+			return nil
+		})
 	}
 
-	m.stats.TotalRules = len(m.rules)
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	// Count rules in sync.Map
+	m.updateStats()
 
 	return nil
 }
@@ -216,11 +248,12 @@ func (m *InMemoryMatcher) processEvent(event *Event) error {
 	}
 }
 
+func (m *InMemoryMatcher) SetAllowDuplicateWeights(allow bool) {
+	m.allowDuplicateWeights = allow
+}
+
 // AddRule adds a new rule to the matcher
 func (m *InMemoryMatcher) AddRule(rule *Rule) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
@@ -234,25 +267,23 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	rule.UpdatedAt = now
 
 	// Add to internal structures
-	m.rules[rule.ID] = rule
+	m.rules.Store(rule.ID, rule)
 
 	// Add to tenant-specific tracking
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
-	if m.tenantRules[key] == nil {
-		m.tenantRules[key] = make(map[string]*Rule)
-	}
-	m.tenantRules[key][rule.ID] = rule
 
-	// Add to appropriate forest index
+	// Add to appropriate forest index with per-forest locking
 	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-	forestIndex.AddRule(rule)
+	m.wforest(key, func() any {
+		forestIndex.AddRule(rule)
+		return nil
+	})
 
 	// Clear cache since we added a new rule
 	m.cache.Clear()
 
-	// Update stats
-	m.stats.TotalRules = len(m.rules)
-	m.stats.LastUpdated = now
+	// Update stats (with global write lock)
+	m.updateStats()
 
 	// Publish event to message queue
 	if m.broker != nil {
@@ -275,15 +306,22 @@ func (m *InMemoryMatcher) UpdateRule(rule *Rule) error {
 	return m.updateRule(rule)
 }
 
+func (m *InMemoryMatcher) GetForestStats() map[string]interface{} {
+	stats := make(map[string]any)
+	m.forestIndexes.Range(func(key any, value any) bool {
+		stats[key.(string)] = value.(*ForestIndex).GetStats()
+		return true
+	})
+	return stats
+}
+
 // GetRule retrieves a rule by ID (public method)
 func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	rule, exists := m.rules[ruleID]
+	ruleVal, exists := m.rules.Load(ruleID)
 	if !exists {
 		return nil, fmt.Errorf("rule with ID '%s' not found", ruleID)
 	}
+	rule := ruleVal.(*Rule)
 
 	// Return a copy to prevent external modification
 	ruleCopy := &Rule{
@@ -322,12 +360,7 @@ func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
 
 // updateRule updates an existing rule
 func (m *InMemoryMatcher) updateRule(rule *Rule) error {
-	// Use write lock to ensure complete atomicity during updates
-	// This prevents any concurrent queries from seeing partial state
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Validate rule
+	// Validate rule (this should be done without holding locks)
 	if err := m.validateRule(rule); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
 	}
@@ -337,51 +370,59 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 
 	// Get old rule and forest index info before any modifications
 	var oldRule *Rule
-	var oldForestIndex *ForestIndex
-	var oldKey string
-
-	if existingRule, exists := m.rules[rule.ID]; exists {
-		oldRule = existingRule
-		oldForestIndex = m.getForestIndex(oldRule.TenantID, oldRule.ApplicationID)
-		oldKey = m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
+	if v, exists := m.rules.Load(rule.ID); exists {
+		oldRule = v.(*Rule)
 	}
 
-	// Get the new tenant key and forest index
+	// Get the new tenant key and ensure forest exists (without locking forest operations yet)
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
-	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
 
-	// ATOMIC UPDATE STRATEGY: With write lock held, perform all operations sequentially
-	// This ensures no concurrent FindAllMatches can see partial state
-
-	// Step 1: Remove old rule from forest first to prevent double-matching
-	if oldRule != nil && oldForestIndex != nil {
-		oldForestIndex.RemoveRule(oldRule)
+	// Ensure forest exists without doing operations on it yet
+	// We'll lock it separately for actual operations
+	if _, exists := m.forestIndexes.Load(key); !exists {
+		// Create new forest index for this tenant/application (with temporary lock)
+		m.wforest(key, func() any {
+			if _, exists := m.forestIndexes.Load(key); !exists {
+				newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, m.getDimensionsMap())
+				forestIndex := &ForestIndex{RuleForest: newForest}
+				m.forestIndexes.Store(key, forestIndex)
+			}
+			return nil
+		})
 	}
 
-	// Step 2: Update m.rules immediately - this is now the authoritative source
-	m.rules[rule.ID] = rule
+	// Get forest index (now we know it exists)
+	forestIndexVal, _ := m.forestIndexes.Load(key)
+	forestIndex := forestIndexVal.(*ForestIndex)
 
-	// Step 3: Add new rule to forest
-	forestIndex.AddRule(rule)
+	// CRITICAL ATOMIC UPDATE STRATEGY:
+	// Use per-forest locking to ensure atomic operations within each forest.
+	// Remove from m.rules during update to prevent visibility of both versions.
 
-	// Step 4: Update tenant tracking
-	if oldRule != nil && oldKey != key && m.tenantRules[oldKey] != nil {
-		delete(m.tenantRules[oldKey], rule.ID)
+	// Step 1: Remove rule from m.rules if it exists (makes it invisible to all queries)
+	if oldRule != nil {
+		m.rules.Delete(rule.ID)
 	}
 
-	if m.tenantRules[key] == nil {
-		m.tenantRules[key] = make(map[string]*Rule)
-	}
-	m.tenantRules[key][rule.ID] = rule
+	// Step 2: Perform forest operations with proper per-forest locking
+	m.wforest(key, func() any {
+		if oldRule != nil {
+			forestIndex.RemoveRule(oldRule)
+		}
+		forestIndex.AddRule(rule)
+		return nil
+	})
 
-	// Step 5: Clear cache
+	// Step 3: Only now make the updated rule visible by adding to m.rules
+	m.rules.Store(rule.ID, rule)
+
+	// Step 4: Clear cache
 	m.cache.Clear()
 
-	// Step 6: Update stats
-	m.stats.TotalRules = len(m.rules)
-	m.stats.LastUpdated = time.Now()
+	// Step 5: Update stats
+	m.updateStats()
 
-	// Step 7: Publish event to message queue
+	// Step 6: Publish event to message queue
 	if m.broker != nil {
 		event := &Event{
 			Type:      EventTypeRuleUpdated,
@@ -404,35 +445,31 @@ func (m *InMemoryMatcher) DeleteRule(ruleID string) error {
 
 // deleteRule removes a rule from the matcher (internal method)
 func (m *InMemoryMatcher) deleteRule(ruleID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	rule, exists := m.rules[ruleID]
+	// Get rule info (under read lock)
+	ruleVal, exists := m.rules.Load(ruleID)
 	if !exists {
 		return fmt.Errorf("rule not found: %s", ruleID)
 	}
+	rule := ruleVal.(*Rule)
 
-	// Remove from appropriate forest index
+	// Remove from appropriate forest index with per-forest locking
 	forestIndex := m.getForestIndex(rule.TenantID, rule.ApplicationID)
 	if forestIndex != nil {
-		forestIndex.RemoveRule(rule)
-	}
-
-	// Remove from tenant-specific tracking
-	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
-	if m.tenantRules[key] != nil {
-		delete(m.tenantRules[key], ruleID)
+		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
+		m.wforest(key, func() any {
+			forestIndex.RemoveRule(rule)
+			return nil
+		})
 	}
 
 	// Remove from rules map
-	delete(m.rules, ruleID)
+	m.rules.Delete(ruleID)
 
 	// Clear cache
 	m.cache.Clear()
 
 	// Update stats
-	m.stats.TotalRules = len(m.rules)
-	m.stats.LastUpdated = time.Now()
+	m.updateStats()
 
 	// Publish event to message queue
 	if m.broker != nil {
@@ -457,24 +494,20 @@ func (m *InMemoryMatcher) AddDimension(config *DimensionConfig) error {
 
 // updateDimension updates dimension configuration
 func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Validate dimension config
 	if config.Name == "" {
 		return fmt.Errorf("dimension name cannot be empty")
 	}
 
 	// Add to configurations
-	m.dimensionConfigs[config.Name] = config
+	m.dimensions.Store(config.Name, config)
 
 	// Initialize forest for this dimension in appropriate tenant/application context
 	forestIndex := m.getOrCreateForestIndex(config.TenantID, config.ApplicationID)
 	forestIndex.InitializeDimension(config.Name)
 
 	// Update stats
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
-	m.stats.LastUpdated = time.Now()
+	m.updateStats()
 
 	// Publish event to message queue
 	if m.broker != nil {
@@ -494,20 +527,20 @@ func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
 
 // deleteDimension removes a dimension configuration
 func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Get the dimension config before deleting it for the event
-	config, exists := m.dimensionConfigs[dimensionName]
+	configVal, exists := m.dimensions.Load(dimensionName)
+	var config *DimensionConfig
+	if exists {
+		config = configVal.(*DimensionConfig)
+	}
 
-	delete(m.dimensionConfigs, dimensionName)
+	m.dimensions.Delete(dimensionName)
 
 	// Note: We don't remove the forest here as it might still contain rules
 	// In production, you might want to handle this more carefully
 
 	// Update stats
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
-	m.stats.LastUpdated = time.Now()
+	m.updateStats()
 
 	// Publish event to message queue if dimension existed
 	if exists && m.broker != nil {
@@ -528,19 +561,12 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 // FindBestMatch finds the best matching rule for a query
 func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) {
 	start := time.Now()
-	defer func() {
-		m.mu.Lock()
-		m.stats.TotalQueries++
-		m.stats.AverageQueryTime = time.Duration(
-			(int64(m.stats.AverageQueryTime)*m.stats.TotalQueries + int64(time.Since(start))) /
-				(m.stats.TotalQueries + 1),
-		)
-		m.mu.Unlock()
-	}()
 
 	// Check cache first
 	if result := m.cache.Get(query); result != nil {
 		m.updateCacheStats(true)
+		// Update stats without deadlock risk
+		m.updateQueryStats(start)
 		return result, nil
 	}
 
@@ -549,10 +575,12 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 	// Find all matches
 	matches, err := m.FindAllMatches(query)
 	if err != nil {
+		m.updateQueryStats(start)
 		return nil, err
 	}
 
 	if len(matches) == 0 {
+		m.updateQueryStats(start)
 		return nil, nil
 	}
 
@@ -561,20 +589,28 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 	// Cache the result
 	m.cache.Set(query, best)
 
+	// Update stats after all operations complete
+	m.updateQueryStats(start)
+
 	return best, nil
 }
 
 // FindAllMatches finds all matching rules for a query
 func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	// Get candidate rules from appropriate forest index
-	forestIndex := m.getForestIndex(query.TenantID, query.ApplicationID)
+	// Since we hold the main matcher lock, we can access the forest directly
+	key := m.getTenantKey(query.TenantID, query.ApplicationID)
+	var forestIndex *ForestIndex
+	if forestIndexVal, exists := m.forestIndexes.Load(key); exists {
+		forestIndex = forestIndexVal.(*ForestIndex)
+	}
 	var candidates []RuleWithWeight
 
 	if forestIndex != nil {
-		candidates = forestIndex.FindCandidateRules(query)
+		// Lock the specific forest for reading
+		candidates = m.rforest(key, func() any {
+			return forestIndex.FindCandidateRules(query)
+		}).([]RuleWithWeight)
 	} else {
 		// If no specific tenant forest, return empty results
 		candidates = []RuleWithWeight{}
@@ -587,10 +623,11 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 	// AND exists in m.rules AND its dimensions in m.rules still match the query
 	for _, candidate := range candidates {
 		// Check 1: Rule must exist in m.rules (authoritative source)
-		actualRule, exists := m.rules[candidate.Rule.ID]
+		actualRuleVal, exists := m.rules.Load(candidate.Rule.ID)
 		if !exists {
 			continue // Skip rules that don't exist in m.rules (being updated)
 		}
+		actualRule := actualRuleVal.(*Rule)
 
 		// Check 2: The rule from m.rules must actually match this query
 		// This prevents returning rules that matched old dimensions but not current ones
@@ -658,8 +695,11 @@ func (m *InMemoryMatcher) isFullMatch(rule *Rule, query *QueryRule) bool {
 		queryValue, hasQueryValue := query.Values[dimValue.DimensionName]
 
 		// If dimension is required but not in query, no match
-		if dimConfig, exists := m.dimensionConfigs[dimValue.DimensionName]; exists && dimConfig.Required && !hasQueryValue {
-			return false
+		if dimConfigVal, exists := m.dimensions.Load(dimValue.DimensionName); exists {
+			dimConfig := dimConfigVal.(*DimensionConfig)
+			if dimConfig.Required && !hasQueryValue {
+				return false
+			}
 		}
 
 		// If we have a query value, check if it matches
@@ -735,7 +775,7 @@ func (m *InMemoryMatcher) validateRule(rule *Rule) error {
 // validateDimensionConsistency ensures rule dimensions match the configured dimensions
 func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 	// Check if any dimensions are configured
-	if len(m.dimensionConfigs) == 0 {
+	if syncMapLen(m.dimensions) == 0 {
 		// If no dimensions configured, allow any dimensions (for backward compatibility)
 		return nil
 	}
@@ -747,17 +787,25 @@ func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 	}
 
 	// Check all configured dimensions
-	for _, configDim := range m.dimensionConfigs {
+	var validationErr error
+	m.dimensions.Range(func(key, value any) bool {
+		configDim := value.(*DimensionConfig)
 		_, exists := ruleDimensions[configDim.Name]
 
 		if configDim.Required && !exists {
-			return fmt.Errorf("rule missing required dimension '%s'", configDim.Name)
+			validationErr = fmt.Errorf("rule missing required dimension '%s'", configDim.Name)
+			return false // Stop iteration
 		}
 
 		if exists {
 			// Remove from map to track processed dimensions
 			delete(ruleDimensions, configDim.Name)
 		}
+		return true // Continue iteration
+	})
+
+	if validationErr != nil {
+		return validationErr
 	}
 
 	// Check for extra dimensions not in configuration
@@ -779,26 +827,29 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 		return nil
 	}
 
-	newRuleWeight := rule.CalculateTotalWeight(m.dimensionConfigs)
-	tenantKey := m.getTenantKey(rule.TenantID, rule.ApplicationID)
+	newRuleWeight := rule.CalculateTotalWeight(m.getDimensionsMap())
 
 	// Check against existing rules in the same tenant/application context
-	if tenantRules, exists := m.tenantRules[tenantKey]; exists {
-		for existingRuleID, existingRule := range tenantRules {
-			// Skip if it's the same rule (for updates)
-			if existingRuleID == rule.ID {
-				continue
-			}
+	var conflictErr error
+	m.rules.Range(func(key, value any) bool {
+		existingRuleID := key.(string)
+		existingRule := value.(*Rule)
 
-			existingWeight := existingRule.CalculateTotalWeight(m.dimensionConfigs)
-			if existingWeight == newRuleWeight {
-				return fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f in tenant '%s' application '%s'",
-					existingRuleID, existingWeight, rule.TenantID, rule.ApplicationID)
-			}
+		// Skip if it's the same rule (for updates)
+		if existingRuleID == rule.ID {
+			return true // Continue iteration
 		}
-	}
 
-	return nil
+		existingWeight := existingRule.CalculateTotalWeight(m.getDimensionsMap())
+		if existingWeight == newRuleWeight {
+			conflictErr = fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f in tenant '%s' application '%s'",
+				existingRuleID, existingWeight, rule.TenantID, rule.ApplicationID)
+			return false // Stop iteration
+		}
+		return true // Continue iteration
+	})
+
+	return conflictErr
 }
 
 // validateRuleForRebuild validates a rule during rebuild with provided dimension configs
@@ -869,9 +920,6 @@ func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, di
 
 // updateCacheStats updates cache hit rate statistics
 func (m *InMemoryMatcher) updateCacheStats(hit bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Simple moving average for cache hit rate
 	if hit {
 		m.stats.CacheHitRate = (m.stats.CacheHitRate*0.9 + 0.1)
@@ -882,13 +930,14 @@ func (m *InMemoryMatcher) updateCacheStats(hit bool) {
 
 // ListRules returns all rules with pagination
 func (m *InMemoryMatcher) ListRules(offset, limit int) ([]*Rule, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var rules []*Rule
-	for _, rule := range m.rules {
-		rules = append(rules, rule)
-	}
+	rlock(m.mu, func() any {
+		m.rules.Range(func(key, value any) bool {
+			rules = append(rules, value.(*Rule))
+			return true
+		})
+		return nil
+	})
 
 	// Sort by creation time (newest first)
 	sort.Slice(rules, func(i, j int) bool {
@@ -910,13 +959,14 @@ func (m *InMemoryMatcher) ListRules(offset, limit int) ([]*Rule, error) {
 
 // ListDimensions returns all dimension configurations
 func (m *InMemoryMatcher) ListDimensions() ([]*DimensionConfig, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	var configs []*DimensionConfig
-	for _, config := range m.dimensionConfigs {
-		configs = append(configs, config)
-	}
+	rlock(m.mu, func() any {
+		m.dimensions.Range(func(key, value any) bool {
+			configs = append(configs, value.(*DimensionConfig))
+			return true
+		})
+		return nil
+	})
 
 	// Sort by index
 	sort.Slice(configs, func(i, j int) bool {
@@ -928,9 +978,6 @@ func (m *InMemoryMatcher) ListDimensions() ([]*DimensionConfig, error) {
 
 // GetStats returns current statistics
 func (m *InMemoryMatcher) GetStats() *MatcherStats {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	// Create a copy to avoid race conditions
 	stats := *m.stats
 	return &stats
@@ -938,30 +985,30 @@ func (m *InMemoryMatcher) GetStats() *MatcherStats {
 
 // SaveToPersistence saves current state to persistence layer
 func (m *InMemoryMatcher) SaveToPersistence() error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	return rlock(m.mu, func() error {
+		// Save rules
+		var rules []*Rule
+		m.rules.Range(func(key, value any) bool {
+			rules = append(rules, value.(*Rule))
+			return true
+		})
+		if err := m.persistence.SaveRules(m.ctx, rules); err != nil {
+			return fmt.Errorf("failed to save rules: %w", err)
+		}
 
-	// Save rules
-	var rules []*Rule
-	for _, rule := range m.rules {
-		rules = append(rules, rule)
-	}
+		// Save dimension configurations
+		var configs []*DimensionConfig
+		m.dimensions.Range(func(key, value any) bool {
+			configs = append(configs, value.(*DimensionConfig))
+			return true
+		})
 
-	if err := m.persistence.SaveRules(m.ctx, rules); err != nil {
-		return fmt.Errorf("failed to save rules: %w", err)
-	}
+		if err := m.persistence.SaveDimensionConfigs(m.ctx, configs); err != nil {
+			return fmt.Errorf("failed to save dimension configs: %w", err)
+		}
 
-	// Save dimension configurations
-	var configs []*DimensionConfig
-	for _, config := range m.dimensionConfigs {
-		configs = append(configs, config)
-	}
-
-	if err := m.persistence.SaveDimensionConfigs(m.ctx, configs); err != nil {
-		return fmt.Errorf("failed to save dimension configs: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // Close closes the matcher and cleans up resources
@@ -977,11 +1024,8 @@ func (m *InMemoryMatcher) Close() error {
 
 // Rebuild clears all data and rebuilds the forest from the persistence interface
 func (m *InMemoryMatcher) Rebuild() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	// Create new structures for atomic replacement
-	newForestIndexes := make(map[string]*ForestIndex)
+	newForestIndexes := sync.Map{}
 	newDimensionConfigs := make(map[string]*DimensionConfig)
 	newRules := make(map[string]*Rule)
 	newTenantRules := make(map[string]map[string]*Rule)
@@ -998,11 +1042,17 @@ func (m *InMemoryMatcher) Rebuild() error {
 
 		// Get or create forest for this tenant/application
 		key := m.getTenantKey(config.TenantID, config.ApplicationID)
-		if newForestIndexes[key] == nil {
-			newForest := CreateRuleForestWithTenant(config.TenantID, config.ApplicationID, m.dimensionConfigs)
-			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
-		}
-		newForestIndexes[key].InitializeDimension(config.Name)
+		m.wforest(key, func() any {
+			if forrest, ok := newForestIndexes.Load(key); !ok {
+				newForest := CreateRuleForestWithTenant(config.TenantID, config.ApplicationID, newDimensionConfigs)
+				forrestIndex := &ForestIndex{RuleForest: newForest}
+				forrestIndex.InitializeDimension(config.Name)
+				newForestIndexes.Store(key, forrestIndex)
+			} else {
+				forrest.(*ForestIndex).InitializeDimension(config.Name)
+			}
+			return nil
+		})
 	}
 
 	// Load rules from persistence
@@ -1027,24 +1077,40 @@ func (m *InMemoryMatcher) Rebuild() error {
 		newTenantRules[key][rule.ID] = rule
 
 		// Get or create forest for this tenant/application
-		if newForestIndexes[key] == nil {
-			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, m.dimensionConfigs)
-			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
-		}
-		newForestIndexes[key].AddRule(rule)
+		m.wforest(key, func() any {
+			if fi, ok := newForestIndexes.Load(key); !ok {
+				newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, newDimensionConfigs)
+				newForestIndexes.Store(key, &ForestIndex{RuleForest: newForest})
+			} else {
+				fi.(*ForestIndex).AddRule(rule)
+			}
+			return nil
+		})
 	}
 
 	// Replace all core data structures atomically
 	// This ensures no query can see an inconsistent state
-	m.forestIndexes, m.dimensionConfigs, m.rules, m.tenantRules = newForestIndexes, newDimensionConfigs, newRules, newTenantRules
+	m.forestIndexes = &newForestIndexes
+
+	// Replace dimensions sync.Map
+	newDimensionsSyncMap := &sync.Map{}
+	for name, config := range newDimensionConfigs {
+		newDimensionsSyncMap.Store(name, config)
+	}
+	m.dimensions = newDimensionsSyncMap
+
+	// Replace rules sync.Map
+	newRulesSyncMap := &sync.Map{}
+	for id, rule := range newRules {
+		newRulesSyncMap.Store(id, rule)
+	}
+	m.rules = newRulesSyncMap
 
 	// Clear cache after successful replacement
 	m.cache.Clear()
 
 	// Update stats
-	m.stats.TotalRules = len(m.rules)
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
-	m.stats.LastUpdated = time.Now()
+	m.updateStats()
 
 	return nil
 }
@@ -1079,4 +1145,43 @@ func (m *InMemoryMatcher) publishEvent(event *Event) {
 		// Log error but don't fail the operation
 		fmt.Printf("Failed to publish event: %v\n", err)
 	}
+}
+
+// updateQueryStats safely updates query statistics
+func (m *InMemoryMatcher) updateQueryStats(start time.Time) {
+	atomic.AddInt64(&m.stats.TotalQueries, 1)
+	queryTime := time.Since(start)
+	m.stats.AverageQueryTime = time.Duration(
+		(int64(m.stats.AverageQueryTime)*(m.stats.TotalQueries-1) + int64(queryTime)) /
+			int64(m.stats.TotalQueries),
+	)
+}
+
+// getForestLock gets or creates a forest-specific lock
+func (m *InMemoryMatcher) getForestLock(key string) *sync.RWMutex {
+	// Create new lock for this forest
+	lock, _ := m.forestLocks.LoadOrStore(key, &sync.RWMutex{})
+	return lock.(*sync.RWMutex)
+}
+
+// rforest acquires a read lock on the specified forest
+func (m *InMemoryMatcher) rforest(key string, f func() any) any {
+	return rlock(m.getForestLock(key), f)
+}
+
+// rforest acquires a read lock on the specified forest
+func (m *InMemoryMatcher) wforest(key string, f func() any) any {
+	return wlock(m.getForestLock(key), f)
+}
+
+func rlock[T any](lc *sync.RWMutex, f func() T) T {
+	lc.RLock()
+	defer lc.RUnlock()
+	return f()
+}
+
+func wlock[T any](lc *sync.RWMutex, f func() T) T {
+	lc.Lock()
+	defer lc.Unlock()
+	return f()
 }

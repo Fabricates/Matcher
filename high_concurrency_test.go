@@ -22,7 +22,7 @@ func TestHighConcurrencyNoPartialRules(t *testing.T) {
 
 	// Add dimension configurations
 	for i, dimName := range []string{"region", "env", "service", "version", "tier"} {
-		config := NewDimensionConfig(dimName, i, false, float64(5+i))
+		config := NewDimensionConfig(dimName, i, false)
 		config.SetWeight(MatchTypeEqual, float64(10+i*2))
 		err = engine.AddDimension(config)
 		if err != nil {

@@ -174,8 +174,8 @@ func TestSetAllowDuplicateWeights(t *testing.T) {
 func TestInitializeDimension(t *testing.T) {
 	// Create forest with dimension configs
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true, 10.0),
-		"route":   NewDimensionConfig("route", 1, false, 5.0),
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
 	}
 
 	forest := CreateRuleForest(dimensionConfigs)

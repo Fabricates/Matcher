@@ -38,25 +38,23 @@ func (mt MatchType) String() string {
 	}
 }
 
-// NewDimensionConfig creates a DimensionConfig with a default weight for all match types
-func NewDimensionConfig(name string, index int, required bool, defaultWeight float64) *DimensionConfig {
+// NewDimensionConfig creates a DimensionConfig with empty weights map
+func NewDimensionConfig(name string, index int, required bool) *DimensionConfig {
 	return &DimensionConfig{
-		Name:          name,
-		Index:         index,
-		Required:      required,
-		Weights:       make(map[MatchType]float64),
-		DefaultWeight: defaultWeight,
+		Name:     name,
+		Index:    index,
+		Required: required,
+		Weights:  make(map[MatchType]float64),
 	}
 }
 
 // NewDimensionConfigWithWeights creates a DimensionConfig with specific weights per match type
-func NewDimensionConfigWithWeights(name string, index int, required bool, weights map[MatchType]float64, defaultWeight float64) *DimensionConfig {
+func NewDimensionConfigWithWeights(name string, index int, required bool, weights map[MatchType]float64) *DimensionConfig {
 	return &DimensionConfig{
-		Name:          name,
-		Index:         index,
-		Required:      required,
-		Weights:       weights,
-		DefaultWeight: defaultWeight,
+		Name:     name,
+		Index:    index,
+		Required: required,
+		Weights:  weights,
 	}
 }
 
@@ -68,12 +66,12 @@ func (dc *DimensionConfig) SetWeight(matchType MatchType, weight float64) {
 	dc.Weights[matchType] = weight
 }
 
-// GetWeight returns the weight for a specific match type, falling back to default weight
+// GetWeight returns the weight for a specific match type, returning 0.0 if not configured
 func (dc *DimensionConfig) GetWeight(matchType MatchType) float64 {
 	if weight, exists := dc.Weights[matchType]; exists {
 		return weight
 	}
-	return dc.DefaultWeight
+	return 0.0
 }
 
 // DimensionConfig defines the configuration for a dimension
@@ -82,7 +80,6 @@ type DimensionConfig struct {
 	Index         int                   `json:"index"`                    // Order of this dimension
 	Required      bool                  `json:"required"`                 // Whether this dimension is required for matching
 	Weights       map[MatchType]float64 `json:"weights"`                  // Weights for each match type
-	DefaultWeight float64               `json:"default_weight"`           // Fallback weight for undefined match types
 	TenantID      string                `json:"tenant_id,omitempty"`      // Tenant identifier for multi-tenancy
 	ApplicationID string                `json:"application_id,omitempty"` // Application identifier for multi-application support
 }
@@ -224,12 +221,12 @@ func (r *Rule) CalculateTotalWeight(dimensionConfigs map[string]*DimensionConfig
 			if weight, hasWeight := config.Weights[dim.MatchType]; hasWeight {
 				total += weight
 			} else {
-				// Fall back to default weight if match type not configured
-				total += config.DefaultWeight
+				// Use 0.0 when no specific weight is configured for this match type
+				total += 0.0
 			}
 		} else {
-			// If no configuration exists, use a default weight of 1.0
-			total += 1.0
+			// If no configuration exists, use a default weight of 0.0
+			total += 0.0
 		}
 	}
 	return total

@@ -9,11 +9,11 @@ import (
 // Helper function to add test dimensions for backward compatibility
 func addTestDimensions(engine *InMemoryMatcher) error {
 	dimensions := []*DimensionConfig{
-		NewDimensionConfig("product", 0, true, 10.0),
-		NewDimensionConfig("route", 1, false, 5.0),
-		NewDimensionConfig("tool", 2, false, 8.0),
-		NewDimensionConfig("tool_id", 3, false, 3.0),
-		NewDimensionConfig("recipe", 4, false, 12.0),
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+		NewDimensionConfig("tool_id", 3, false),
+		NewDimensionConfig("recipe", 4, false),
 	}
 
 	for _, dim := range dimensions {
@@ -70,8 +70,8 @@ func TestBasicMatching(t *testing.T) {
 		t.Errorf("Expected rule 'test_rule', got '%s'", result.Rule.ID)
 	}
 
-	if result.TotalWeight != 23.0 { // 10 + 5 + 8
-		t.Errorf("Expected weight 23.0, got %.1f", result.TotalWeight)
+	if result.TotalWeight != 0.0 { // No explicit weights set for MatchTypeEqual, should default to 0.0
+		t.Errorf("Expected weight 0.0, got %.1f", result.TotalWeight)
 	}
 }
 
@@ -417,7 +417,7 @@ func TestDynamicDimensions(t *testing.T) {
 	}
 
 	// Add custom dimension
-	customDim := NewDimensionConfig("custom_dimension", 5, false, 20.0)
+	customDim := NewDimensionConfig("custom_dimension", 5, false)
 
 	err = engine.AddDimension(customDim)
 	if err != nil {
@@ -524,12 +524,12 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 	}
 
 	// Test 2: Configure dimensions
-	err = engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
+	err = engine.AddDimension(NewDimensionConfig("product", 0, true))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(NewDimensionConfig("route", 1, false, 5.0))
+	err = engine.AddDimension(NewDimensionConfig("route", 1, false))
 	if err != nil {
 		t.Fatalf("Failed to add route dimension: %v", err)
 	}
@@ -651,11 +651,11 @@ func TestRebuild(t *testing.T) {
 		Build()
 
 	// Add directly to internal structures without persistence (simulate corrupted state)
-	engine.rules["temp_rule_not_persisted"] = tempRule
+	engine.rules.Store("temp_rule_not_persisted", tempRule)
 	// Add to appropriate forest (default tenant/app since tempRule has empty tenant context)
 	forestIndex := engine.getOrCreateForestIndex(tempRule.TenantID, tempRule.ApplicationID)
 	forestIndex.AddRule(tempRule)
-	engine.stats.TotalRules = len(engine.rules)
+	engine.stats.TotalRules = syncMapLen(engine.rules)
 
 	// Verify temp rule exists in memory
 	stats = engine.GetStats()
@@ -676,7 +676,7 @@ func TestRebuild(t *testing.T) {
 	}
 
 	// Verify the temp rule is gone
-	if _, exists := engine.rules["temp_rule_not_persisted"]; exists {
+	if _, exists := engine.rules.Load("temp_rule_not_persisted"); exists {
 		t.Fatalf("Temp rule should not exist after rebuild")
 	}
 

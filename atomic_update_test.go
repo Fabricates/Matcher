@@ -18,11 +18,11 @@ func TestAtomicRuleUpdateFix(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension configurations
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
-	envConfig := NewDimensionConfig("env", 1, false, 3.0)
+	envConfig := NewDimensionConfig("env", 1, false)
 	envConfig.SetWeight(MatchTypeEqual, 8.0)
-	serviceConfig := NewDimensionConfig("service", 2, false, 2.0)
+	serviceConfig := NewDimensionConfig("service", 2, false)
 	serviceConfig.SetWeight(MatchTypeEqual, 6.0)
 
 	engine.AddDimension(regionConfig)
