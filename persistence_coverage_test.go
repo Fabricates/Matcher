@@ -84,7 +84,7 @@ func TestPersistenceErrorCases(t *testing.T) {
 
 	// Test SaveDimensionConfigs error case
 	configs := []*DimensionConfig{
-		NewDimensionConfig("test", 0, false, 1.0),
+		NewDimensionConfig("test", 0, false),
 	}
 
 	err = persistence.SaveDimensionConfigs(ctx, configs)
@@ -179,8 +179,8 @@ func TestKafkaEventSubscriberCoverage(t *testing.T) {
 func TestForestCandidateRulesWithRule(t *testing.T) {
 	// Create forest with dimension configs
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true, 10.0),
-		"route":   NewDimensionConfig("route", 1, false, 5.0),
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
 	}
 
 	forest := CreateRuleForest(dimensionConfigs)

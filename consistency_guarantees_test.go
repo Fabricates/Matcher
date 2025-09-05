@@ -22,7 +22,7 @@ func TestRuleConsistencyGuarantees(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add test dimensions
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	err = engine.AddDimension(regionConfig)
 	if err != nil {

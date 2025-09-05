@@ -25,9 +25,9 @@ func main() {
 	// Initialize default dimensions
 	// Add required dimensions
 	dimensions := []*matcher.DimensionConfig{
-		matcher.NewDimensionConfig("product", 0, true, 10.0),
-		matcher.NewDimensionConfig("route", 1, false, 5.0),
-		matcher.NewDimensionConfig("tool", 2, false, 8.0),
+		matcher.NewDimensionConfig("product", 0, true),
+		matcher.NewDimensionConfig("route", 1, false),
+		matcher.NewDimensionConfig("tool", 2, false),
 	}
 
 	for _, dim := range dimensions {

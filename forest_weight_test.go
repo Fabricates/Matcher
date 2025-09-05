@@ -8,8 +8,8 @@ import (
 func TestForestWeightOrdering(t *testing.T) {
 	// Set up dimension configs to control weights
 	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false, 10.0),
-		"env":    NewDimensionConfig("env", 1, false, 5.0),
+		"region": NewDimensionConfig("region", 0, false),
+		"env":    NewDimensionConfig("env", 1, false),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -97,7 +97,7 @@ func TestForestWeightOrdering(t *testing.T) {
 
 func TestForestStatusFiltering(t *testing.T) {
 	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false, 10.0),
+		"region": NewDimensionConfig("region", 0, false),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -170,7 +170,7 @@ func TestForestStatusFiltering(t *testing.T) {
 
 func TestForestNoDuplicateChecks(t *testing.T) {
 	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false, 10.0),
+		"region": NewDimensionConfig("region", 0, false),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -211,7 +211,7 @@ func TestForestNoDuplicateChecks(t *testing.T) {
 
 func TestForestOptimizationEfficiency(t *testing.T) {
 	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false, 1.0), // Base weight, rules will use manual weights
+		"region": NewDimensionConfig("region", 0, false), // Base weight, rules will use manual weights
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 

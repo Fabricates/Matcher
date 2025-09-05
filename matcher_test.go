@@ -9,11 +9,11 @@ import (
 // Helper function to add test dimensions for backward compatibility
 func addTestDimensions(engine *InMemoryMatcher) error {
 	dimensions := []*DimensionConfig{
-		NewDimensionConfig("product", 0, true, 10.0),
-		NewDimensionConfig("route", 1, false, 5.0),
-		NewDimensionConfig("tool", 2, false, 8.0),
-		NewDimensionConfig("tool_id", 3, false, 3.0),
-		NewDimensionConfig("recipe", 4, false, 12.0),
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+		NewDimensionConfig("tool_id", 3, false),
+		NewDimensionConfig("recipe", 4, false),
 	}
 
 	for _, dim := range dimensions {
@@ -70,8 +70,8 @@ func TestBasicMatching(t *testing.T) {
 		t.Errorf("Expected rule 'test_rule', got '%s'", result.Rule.ID)
 	}
 
-	if result.TotalWeight != 23.0 { // 10 + 5 + 8
-		t.Errorf("Expected weight 23.0, got %.1f", result.TotalWeight)
+	if result.TotalWeight != 0.0 { // No explicit weights set
+		t.Errorf("Expected weight 0.0, got %.1f", result.TotalWeight)
 	}
 }
 
@@ -417,7 +417,7 @@ func TestDynamicDimensions(t *testing.T) {
 	}
 
 	// Add custom dimension
-	customDim := NewDimensionConfig("custom_dimension", 5, false, 20.0)
+	customDim := NewDimensionConfig("custom_dimension", 5, false)
 
 	err = engine.AddDimension(customDim)
 	if err != nil {
@@ -524,12 +524,12 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 	}
 
 	// Test 2: Configure dimensions
-	err = engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
+	err = engine.AddDimension(NewDimensionConfig("product", 0, true))
 	if err != nil {
 		t.Fatalf("Failed to add product dimension: %v", err)
 	}
 
-	err = engine.AddDimension(NewDimensionConfig("route", 1, false, 5.0))
+	err = engine.AddDimension(NewDimensionConfig("route", 1, false))
 	if err != nil {
 		t.Fatalf("Failed to add route dimension: %v", err)
 	}
@@ -599,15 +599,17 @@ func TestRebuild(t *testing.T) {
 		t.Fatalf("Failed to initialize dimensions: %v", err)
 	}
 
-	// Add some rules
+	// Add some rules with different weights to avoid conflicts
 	rule1 := NewRule("rebuild_test_1").
 		Dimension("product", "Product1", MatchTypeEqual).
 		Dimension("route", "Route1", MatchTypeEqual).
+		ManualWeight(1.0).
 		Build()
 
 	rule2 := NewRule("rebuild_test_2").
 		Dimension("product", "Product2", MatchTypeEqual).
 		Dimension("tool", "Tool2", MatchTypeEqual).
+		ManualWeight(2.0).
 		Build()
 
 	err = engine.AddRule(rule1)
