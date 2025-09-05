@@ -17,11 +17,11 @@ func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
 	defer engine.Close()
 
 	// Add dimension configurations with match type-specific weights
-	regionConfig := NewDimensionConfig("region", 0, true, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, true)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	regionConfig.SetWeight(MatchTypePrefix, 7.0)
 
-	envConfig := NewDimensionConfig("env", 1, true, 3.0)
+	envConfig := NewDimensionConfig("env", 1, true)
 	envConfig.SetWeight(MatchTypeEqual, 8.0)
 	envConfig.SetWeight(MatchTypeAny, 2.0)
 
@@ -87,11 +87,11 @@ func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
 	}
 
 	// Test 2: Query with dynamic dimension configs (different weights per match type)
-	dynamicRegionConfig := NewDimensionConfig("region", 0, true, 1.0)
+	dynamicRegionConfig := NewDimensionConfig("region", 0, true)
 	dynamicRegionConfig.SetWeight(MatchTypeEqual, 50.0)  // Much higher for exact matches
 	dynamicRegionConfig.SetWeight(MatchTypePrefix, 30.0) // High for prefix matches
 
-	dynamicEnvConfig := NewDimensionConfig("env", 1, true, 1.0)
+	dynamicEnvConfig := NewDimensionConfig("env", 1, true)
 	dynamicEnvConfig.SetWeight(MatchTypeEqual, 25.0)
 	dynamicEnvConfig.SetWeight(MatchTypeAny, 5.0)
 
@@ -129,7 +129,7 @@ func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
 	}
 
 	// Test 3: Query with partial dynamic configs (only override one dimension)
-	partialDynamicConfig := NewDimensionConfig("region", 0, true, 1.0)
+	partialDynamicConfig := NewDimensionConfig("region", 0, true)
 	partialDynamicConfig.SetWeight(MatchTypeEqual, 100.0) // Very high weight for exact matches
 	partialDynamicConfig.SetWeight(MatchTypePrefix, 60.0)
 
@@ -184,13 +184,13 @@ func TestDynamicConfigsWithComplexMatchTypes(t *testing.T) {
 	defer engine.Close()
 
 	// Add initial dimension configurations
-	priorityConfig := NewDimensionConfig("priority", 0, true, 2.0)
+	priorityConfig := NewDimensionConfig("priority", 0, true)
 	priorityConfig.SetWeight(MatchTypeEqual, 15.0)
 	priorityConfig.SetWeight(MatchTypePrefix, 10.0)
 	priorityConfig.SetWeight(MatchTypeSuffix, 8.0)
 	priorityConfig.SetWeight(MatchTypeAny, 3.0)
 
-	categoryConfig := NewDimensionConfig("category", 1, true, 1.0)
+	categoryConfig := NewDimensionConfig("category", 1, true)
 	categoryConfig.SetWeight(MatchTypeEqual, 12.0)
 	categoryConfig.SetWeight(MatchTypeAny, 2.0)
 
@@ -238,13 +238,13 @@ func TestDynamicConfigsWithComplexMatchTypes(t *testing.T) {
 	}
 
 	// Test with dynamic configs that heavily favor prefix matches
-	dynamicPriorityConfig := NewDimensionConfig("priority", 0, true, 1.0)
+	dynamicPriorityConfig := NewDimensionConfig("priority", 0, true)
 	dynamicPriorityConfig.SetWeight(MatchTypeEqual, 20.0)
 	dynamicPriorityConfig.SetWeight(MatchTypePrefix, 100.0) // Heavily favor prefix matches
 	dynamicPriorityConfig.SetWeight(MatchTypeSuffix, 15.0)
 	dynamicPriorityConfig.SetWeight(MatchTypeAny, 5.0)
 
-	dynamicCategoryConfig := NewDimensionConfig("category", 1, true, 1.0)
+	dynamicCategoryConfig := NewDimensionConfig("category", 1, true)
 	dynamicCategoryConfig.SetWeight(MatchTypeEqual, 30.0)
 	dynamicCategoryConfig.SetWeight(MatchTypeAny, 10.0)
 
@@ -317,12 +317,12 @@ func TestDynamicConfigsWithMultipleMatchTypes(t *testing.T) {
 	defer engine.Close()
 
 	// Create dimension config with different weights for different match types
-	priorityConfig := NewDimensionConfig("priority", 0, true, 1.0) // default weight 1.0
+	priorityConfig := NewDimensionConfig("priority", 0, true) // default weight 1.0
 	priorityConfig.SetWeight(MatchTypeEqual, 10.0)                 // exact matches get 10.0
 	priorityConfig.SetWeight(MatchTypePrefix, 5.0)                 // prefix matches get 5.0
 	priorityConfig.SetWeight(MatchTypeAny, 2.0)                    // any matches get 2.0
 
-	categoryConfig := NewDimensionConfig("category", 1, true, 1.0) // default weight 1.0
+	categoryConfig := NewDimensionConfig("category", 1, true) // default weight 1.0
 	categoryConfig.SetWeight(MatchTypeEqual, 8.0)                  // exact matches get 8.0
 	categoryConfig.SetWeight(MatchTypeSuffix, 3.0)                 // suffix matches get 3.0
 
@@ -403,11 +403,11 @@ func TestDynamicConfigsWithMultipleMatchTypes(t *testing.T) {
 			"priority": NewDimensionConfigWithWeights("priority", 0, true, map[MatchType]float64{
 				MatchTypeEqual:  2.0,  // lower weight for exact
 				MatchTypePrefix: 20.0, // much higher weight for prefix
-			}, 1.0),
+			}),
 			"category": NewDimensionConfigWithWeights("category", 1, true, map[MatchType]float64{
 				MatchTypeEqual:  3.0,  // lower weight for exact
 				MatchTypeSuffix: 15.0, // higher weight for suffix
-			}, 1.0),
+			}),
 		},
 	}
 

@@ -47,8 +47,8 @@ func TestPersistenceSaveDimensionConfigs(t *testing.T) {
 
 	// Create test dimension configs
 	dims := []*DimensionConfig{
-		NewDimensionConfig("region", 0, true, 1.0),
-		NewDimensionConfig("env", 1, false, 0.5),
+		NewDimensionConfig("region", 0, true),
+		NewDimensionConfig("env", 1, false),
 	}
 
 	// Test SaveDimensionConfigs
@@ -168,7 +168,7 @@ func TestDatabasePersistenceOperations(t *testing.T) {
 
 	// Test SaveDimensionConfigs
 	testDims := []*DimensionConfig{
-		NewDimensionConfig("region", 0, true, 1.0),
+		NewDimensionConfig("region", 0, true),
 	}
 	if err := persistence.SaveDimensionConfigs(ctx, testDims); err != nil {
 		t.Errorf("SaveDimensionConfigs failed: %v", err)

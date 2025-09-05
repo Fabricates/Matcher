@@ -16,13 +16,13 @@ func TestMatchTypeBasedWeights(t *testing.T) {
 	defer engine.Close()
 
 	// Create dimension config with different weights per match type
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0) // Default weight
+	regionConfig := NewDimensionConfig("region", 0, false) // Default weight
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)                // Higher weight for exact matches
 	regionConfig.SetWeight(MatchTypePrefix, 7.0)                // Medium weight for prefix matches
 	regionConfig.SetWeight(MatchTypeSuffix, 6.0)                // Lower weight for suffix matches
 	regionConfig.SetWeight(MatchTypeAny, 3.0)                   // Lowest weight for any matches
 
-	envConfig := NewDimensionConfig("env", 1, false, 2.0) // Default weight
+	envConfig := NewDimensionConfig("env", 1, false) // Default weight
 	envConfig.SetWeight(MatchTypeEqual, 8.0)              // High weight for exact env matches
 	envConfig.SetWeight(MatchTypeAny, 1.0)                // Low weight for any env matches
 
@@ -122,7 +122,7 @@ func TestDynamicConfigsWithMatchTypeWeights(t *testing.T) {
 	defer engine.Close()
 
 	// Add a basic dimension config with default weights
-	categoryConfig := NewDimensionConfig("category", 0, false, 5.0)
+	categoryConfig := NewDimensionConfig("category", 0, false)
 	categoryConfig.SetWeight(MatchTypeEqual, 10.0)
 	categoryConfig.SetWeight(MatchTypePrefix, 7.0)
 
@@ -159,7 +159,7 @@ func TestDynamicConfigsWithMatchTypeWeights(t *testing.T) {
 	}
 
 	// Test 2: Query with dynamic dimension configs that override weights per match type
-	dynamicCategoryConfig := NewDimensionConfig("category", 0, false, 1.0)
+	dynamicCategoryConfig := NewDimensionConfig("category", 0, false)
 	dynamicCategoryConfig.SetWeight(MatchTypeEqual, 50.0)  // Much higher weight for exact matches
 	dynamicCategoryConfig.SetWeight(MatchTypePrefix, 30.0) // High weight for prefix matches
 
@@ -199,14 +199,14 @@ func TestMixedMatchTypesInSingleRule(t *testing.T) {
 	defer engine.Close()
 
 	// Create dimension configs with specific weights per match type
-	userConfig := NewDimensionConfig("user_id", 0, false, 1.0)
+	userConfig := NewDimensionConfig("user_id", 0, false)
 	userConfig.SetWeight(MatchTypePrefix, 20.0)
 
-	actionConfig := NewDimensionConfig("action", 1, false, 1.0)
+	actionConfig := NewDimensionConfig("action", 1, false)
 	actionConfig.SetWeight(MatchTypeEqual, 15.0)
 	actionConfig.SetWeight(MatchTypeSuffix, 8.0)
 
-	serviceConfig := NewDimensionConfig("service", 2, false, 1.0)
+	serviceConfig := NewDimensionConfig("service", 2, false)
 	serviceConfig.SetWeight(MatchTypeAny, 5.0)
 
 	// Add dimension configs
@@ -261,7 +261,7 @@ func TestMixedMatchTypesInSingleRule(t *testing.T) {
 	t.Logf("  Total: %.1f", matches[0].TotalWeight)
 }
 
-func TestFallbackToDefaultWeight(t *testing.T) {
+func TestFallbackToZeroWeight(t *testing.T) {
 	// Create a temporary directory for this test
 	tempDir := t.TempDir()
 
@@ -273,9 +273,9 @@ func TestFallbackToDefaultWeight(t *testing.T) {
 	defer engine.Close()
 
 	// Create dimension config with only some match type weights defined
-	statusConfig := NewDimensionConfig("status", 0, false, 10.0) // Default weight
-	statusConfig.SetWeight(MatchTypeEqual, 25.0)                 // Only define weight for Equal match type
-	// MatchTypePrefix, MatchTypeSuffix, MatchTypeAny will use default weight
+	statusConfig := NewDimensionConfig("status", 0, false) // No default weight anymore
+	statusConfig.SetWeight(MatchTypeEqual, 25.0)           // Only define weight for Equal match type
+	// MatchTypePrefix, MatchTypeSuffix, MatchTypeAny will use 0.0 weight
 
 	err = engine.AddDimension(statusConfig)
 	if err != nil {
@@ -328,8 +328,8 @@ func TestFallbackToDefaultWeight(t *testing.T) {
 	}
 
 	// Verify weights
-	expectedEqualWeight := 25.0  // Uses specific weight for MatchTypeEqual
-	expectedPrefixWeight := 10.0 // Falls back to default weight
+	expectedEqualWeight := 25.0 // Uses specific weight for MatchTypeEqual
+	expectedPrefixWeight := 0.0 // Falls back to 0.0 weight (no DefaultWeight anymore)
 
 	if equalMatch.TotalWeight != expectedEqualWeight {
 		t.Errorf("Equal rule: expected weight %.1f, got %.1f", expectedEqualWeight, equalMatch.TotalWeight)

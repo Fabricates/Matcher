@@ -21,11 +21,11 @@ func TestEqualMatchOptimization(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension configurations
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	regionConfig.SetWeight(MatchTypePrefix, 7.0)
 
-	envConfig := NewDimensionConfig("env", 1, false, 3.0)
+	envConfig := NewDimensionConfig("env", 1, false)
 	envConfig.SetWeight(MatchTypeEqual, 8.0)
 	envConfig.SetWeight(MatchTypeAny, 2.0)
 
@@ -184,10 +184,10 @@ func TestEqualMatchPerformance(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension configurations
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 
-	serviceConfig := NewDimensionConfig("service", 1, false, 3.0)
+	serviceConfig := NewDimensionConfig("service", 1, false)
 	serviceConfig.SetWeight(MatchTypeEqual, 8.0)
 
 	err = engine.AddDimension(regionConfig)
@@ -290,7 +290,7 @@ func TestEqualMatchCorrectness(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension configuration
-	userConfig := NewDimensionConfig("user_type", 0, false, 5.0)
+	userConfig := NewDimensionConfig("user_type", 0, false)
 	userConfig.SetWeight(MatchTypeEqual, 10.0)
 	userConfig.SetWeight(MatchTypePrefix, 7.0)
 

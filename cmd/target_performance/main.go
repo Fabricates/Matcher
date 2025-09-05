@@ -45,8 +45,7 @@ func main() {
 		dim := matcher.NewDimensionConfig(
 			fmt.Sprintf("dim_%02d", i),
 			i,
-			i < 3,         // First 3 required
-			float64(21-i), // 20, 19, 18, ... 1
+			i < 3, // First 3 required
 		)
 		if err := engine.AddDimension(dim); err != nil {
 			slog.Error("Failed to add dimension", "error", err)

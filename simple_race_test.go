@@ -18,7 +18,7 @@ func TestSimpleRaceCondition(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimension config
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
 	err = engine.AddDimension(regionConfig)
 	if err != nil {
@@ -116,9 +116,9 @@ func TestAtomicUpdate(t *testing.T) {
 	engine.SetAllowDuplicateWeights(true)
 
 	// Add dimensions
-	regionConfig := NewDimensionConfig("region", 0, false, 5.0)
+	regionConfig := NewDimensionConfig("region", 0, false)
 	regionConfig.SetWeight(MatchTypeEqual, 10.0)
-	envConfig := NewDimensionConfig("env", 1, false, 3.0)
+	envConfig := NewDimensionConfig("env", 1, false)
 	envConfig.SetWeight(MatchTypeEqual, 8.0)
 
 	engine.AddDimension(regionConfig)
