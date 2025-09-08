@@ -822,8 +822,8 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 
 		conflictingWeight := conflictingRule.CalculateTotalWeight(m.dimensionConfigs)
 		if conflictingWeight == newRuleWeight {
-			return fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f and intersects with rule '%s' in tenant '%s' application '%s'",
-				conflictingRule.ID, conflictingWeight, rule.ID, rule.TenantID, rule.ApplicationID)
+			return fmt.Errorf("invalid rule: weight conflict: new rule '%s' has weight %.2f which conflicts with existing rule '%s' in tenant '%s' application '%s'",
+				rule.ID, newRuleWeight, conflictingRule.ID, rule.TenantID, rule.ApplicationID)
 		}
 	}
 
