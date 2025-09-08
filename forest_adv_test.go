@@ -19,7 +19,7 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 		Dimensions: []*DimensionValue{
 			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
 			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeAny}, // Changed to MatchTypeAny for partial query testing
 		},
 	}
 

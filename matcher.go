@@ -179,7 +179,14 @@ func (m *InMemoryMatcher) handleEvents() {
 // processEvent processes a single event
 func (m *InMemoryMatcher) processEvent(event *Event) error {
 	switch event.Type {
-	case EventTypeRuleAdded, EventTypeRuleUpdated:
+	case EventTypeRuleAdded:
+		ruleEvent, ok := event.Data.(*RuleEvent)
+		if !ok {
+			return fmt.Errorf("invalid rule event data")
+		}
+		return m.AddRule(ruleEvent.Rule)
+
+	case EventTypeRuleUpdated:
 		ruleEvent, ok := event.Data.(*RuleEvent)
 		if !ok {
 			return fmt.Errorf("invalid rule event data")
@@ -327,6 +334,12 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check if rule exists - updateRule should only update existing rules
+	existingRule, exists := m.rules[rule.ID]
+	if !exists {
+		return fmt.Errorf("rule with ID '%s' not found - use AddRule to create new rules", rule.ID)
+	}
+
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
 		return fmt.Errorf("invalid rule: %w", err)
@@ -336,15 +349,9 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	rule.UpdatedAt = time.Now()
 
 	// Get old rule and forest index info before any modifications
-	var oldRule *Rule
-	var oldForestIndex *ForestIndex
-	var oldKey string
-
-	if existingRule, exists := m.rules[rule.ID]; exists {
-		oldRule = existingRule
-		oldForestIndex = m.getForestIndex(oldRule.TenantID, oldRule.ApplicationID)
-		oldKey = m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
-	}
+	oldRule := existingRule
+	oldForestIndex := m.getForestIndex(oldRule.TenantID, oldRule.ApplicationID)
+	oldKey := m.getTenantKey(oldRule.TenantID, oldRule.ApplicationID)
 
 	// Get the new tenant key and forest index
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
@@ -354,7 +361,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	// This ensures no concurrent FindAllMatches can see partial state
 
 	// Step 1: Remove old rule from forest first to prevent double-matching
-	if oldRule != nil && oldForestIndex != nil {
+	if oldForestIndex != nil {
 		oldForestIndex.RemoveRule(oldRule)
 	}
 
@@ -365,7 +372,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	forestIndex.AddRule(rule)
 
 	// Step 4: Update tenant tracking
-	if oldRule != nil && oldKey != key && m.tenantRules[oldKey] != nil {
+	if oldKey != key && m.tenantRules[oldKey] != nil {
 		delete(m.tenantRules[oldKey], rule.ID)
 	}
 
@@ -786,7 +793,7 @@ func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 	return nil
 }
 
-// validateWeightConflict ensures no two rules have the same total weight within the same tenant/application
+// validateWeightConflict ensures no two intersecting rules have the same total weight within the same tenant/application
 func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 	// Skip weight conflict check if duplicate weights are allowed
 	if m.allowDuplicateWeights {
@@ -794,21 +801,29 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 	}
 
 	newRuleWeight := rule.CalculateTotalWeight(m.dimensionConfigs)
+
+	// Use efficient forest-based conflict detection
 	tenantKey := m.getTenantKey(rule.TenantID, rule.ApplicationID)
+	forestIndex, exists := m.forestIndexes[tenantKey]
+	if !exists {
+		return nil // No forest exists yet, no conflicts possible
+	}
 
-	// Check against existing rules in the same tenant/application context
-	if tenantRules, exists := m.tenantRules[tenantKey]; exists {
-		for existingRuleID, existingRule := range tenantRules {
-			// Skip if it's the same rule (for updates)
-			if existingRuleID == rule.ID {
-				continue
-			}
+	// Find potentially conflicting rules using the forest structure
+	var conflictingRules []*Rule
+	forestIndex.searchConflict(rule, &conflictingRules)
 
-			existingWeight := existingRule.CalculateTotalWeight(m.dimensionConfigs)
-			if existingWeight == newRuleWeight {
-				return fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f in tenant '%s' application '%s'",
-					existingRuleID, existingWeight, rule.TenantID, rule.ApplicationID)
-			}
+	// Check if any of the potentially conflicting rules have the same weight
+	for _, conflictingRule := range conflictingRules {
+		// Skip if it's the same rule (for updates)
+		if conflictingRule.ID == rule.ID {
+			continue
+		}
+
+		conflictingWeight := conflictingRule.CalculateTotalWeight(m.dimensionConfigs)
+		if conflictingWeight == newRuleWeight {
+			return fmt.Errorf("invalid rule: weight conflict: rule '%s' already has weight %.2f and intersects with rule '%s' in tenant '%s' application '%s'",
+				conflictingRule.ID, conflictingWeight, rule.ID, rule.TenantID, rule.ApplicationID)
 		}
 	}
 

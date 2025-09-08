@@ -197,6 +197,32 @@ engine.AddRule(rule2) // ❌ Error: weight conflict
 - Ensuring consistent rule priority ordering
 - Preventing accidental duplicate rule weights
 
+### Intelligent Conflict Detection
+
+The system uses efficient forest-based conflict detection that only checks for weight conflicts between rules that can actually intersect:
+
+```go
+// These rules DON'T intersect - same weight allowed
+rule1 := matcher.NewRule("rule1").
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    ManualWeight(10.0).Build()
+
+rule2 := matcher.NewRule("rule2").
+    Dimension("product", "ProductB", matcher.MatchTypeEqual). // Different product
+    ManualWeight(10.0).Build() // ✅ Same weight OK - no intersection
+
+// These rules DO intersect - same weight blocked  
+rule3 := matcher.NewRule("rule3").
+    Dimension("product", "Product", matcher.MatchTypePrefix). // Prefix "Product"
+    ManualWeight(15.0).Build()
+
+rule4 := matcher.NewRule("rule4").
+    Dimension("product", "ProductX", matcher.MatchTypeEqual). // "ProductX" starts with "Product"
+    ManualWeight(15.0).Build() // ❌ Weight conflict - rules intersect
+```
+
+**Performance**: Uses O(log n) forest traversal instead of O(n²) rule-pair checking for optimal efficiency.
+
 ## 🏗️ Architecture
 
 ```text
