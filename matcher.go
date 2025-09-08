@@ -293,38 +293,7 @@ func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
 	}
 
 	// Return a copy to prevent external modification
-	ruleCopy := &Rule{
-		ID:            rule.ID,
-		TenantID:      rule.TenantID,
-		ApplicationID: rule.ApplicationID,
-		Dimensions:    make([]*DimensionValue, len(rule.Dimensions)),
-		Metadata:      make(map[string]string),
-		Status:        rule.Status,
-		CreatedAt:     rule.CreatedAt,
-		UpdatedAt:     rule.UpdatedAt,
-	}
-
-	// Deep copy dimensions
-	for i, dim := range rule.Dimensions {
-		ruleCopy.Dimensions[i] = &DimensionValue{
-			DimensionName: dim.DimensionName,
-			Value:         dim.Value,
-			MatchType:     dim.MatchType,
-		}
-	}
-
-	// Copy metadata
-	for k, v := range rule.Metadata {
-		ruleCopy.Metadata[k] = v
-	}
-
-	// Copy manual weight if it exists
-	if rule.ManualWeight != nil {
-		weight := *rule.ManualWeight
-		ruleCopy.ManualWeight = &weight
-	}
-
-	return ruleCopy, nil
+	return rule.Clone(), nil
 }
 
 // updateRule updates an existing rule

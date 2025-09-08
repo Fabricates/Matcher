@@ -170,17 +170,10 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 	}
 
 	// Auto-fill missing dimensions with MatchTypeAny if dimension order is established
-	completeRule := &Rule{
-		ID:            rule.ID,
-		TenantID:      rule.TenantID,
-		ApplicationID: rule.ApplicationID,
-		Dimensions:    make([]*DimensionValue, 0),
-		ManualWeight:  rule.ManualWeight,
-		Status:        rule.Status,
-		CreatedAt:     rule.CreatedAt,
-		UpdatedAt:     rule.UpdatedAt,
-		Metadata:      rule.Metadata,
-	}
+	completeRule := rule.Clone()
+
+	// Clear dimensions to rebuild with proper order
+	completeRule.Dimensions = make([]*DimensionValue, 0)
 
 	// For each dimension in the established order, either use rule's dimension or add MatchTypeAny
 	for _, dimName := range rf.DimensionOrder {
@@ -695,18 +688,8 @@ func (rf *RuleForest) valuesCanIntersect(value1 string, matchType1 MatchType, va
 	}
 
 	// Prefix with Suffix
-	if matchType1 == MatchTypePrefix && matchType2 == MatchTypeSuffix {
-		// Check if there exists a string that starts with value1 and ends with value2
-		// This is true if value1 + value2 is not longer than any reasonable string
-		// or if value2 is contained within a string that starts with value1
-		// For simplicity, we'll say they can intersect if they don't conflict in length
-		return len(value1)+len(value2) <= 1000 // reasonable max string length
-	}
-	if matchType1 == MatchTypeSuffix && matchType2 == MatchTypePrefix {
-		return len(value1)+len(value2) <= 1000 // reasonable max string length
-	}
-
-	return false
+	return (matchType1 == MatchTypePrefix && matchType2 == MatchTypeSuffix) ||
+		(matchType1 == MatchTypeSuffix && matchType2 == MatchTypePrefix)
 }
 
 // insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
