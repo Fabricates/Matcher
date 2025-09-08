@@ -104,6 +104,52 @@ type Rule struct {
 	Metadata      map[string]string `json:"metadata,omitempty"` // Additional metadata
 }
 
+// Clone creates a deep copy of the Rule
+func (r *Rule) Clone() *Rule {
+	if r == nil {
+		return nil
+	}
+
+	clone := &Rule{
+		ID:            r.ID,
+		TenantID:      r.TenantID,
+		ApplicationID: r.ApplicationID,
+		Status:        r.Status,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
+	}
+
+	// Deep copy ManualWeight pointer
+	if r.ManualWeight != nil {
+		weight := *r.ManualWeight
+		clone.ManualWeight = &weight
+	}
+
+	// Deep copy Dimensions slice
+	if r.Dimensions != nil {
+		clone.Dimensions = make([]*DimensionValue, len(r.Dimensions))
+		for i, dim := range r.Dimensions {
+			if dim != nil {
+				clone.Dimensions[i] = &DimensionValue{
+					DimensionName: dim.DimensionName,
+					Value:         dim.Value,
+					MatchType:     dim.MatchType,
+				}
+			}
+		}
+	}
+
+	// Deep copy Metadata map
+	if r.Metadata != nil {
+		clone.Metadata = make(map[string]string, len(r.Metadata))
+		for k, v := range r.Metadata {
+			clone.Metadata[k] = v
+		}
+	}
+
+	return clone
+}
+
 // RuleWithWeight can be used as search candidates
 type RuleWithWeight struct {
 	*Rule
