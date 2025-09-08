@@ -223,6 +223,14 @@ func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 	forest.AddRule(rule1)
 	forest.AddRule(rule2)
 
+	// Debug: Check dimension order
+	dimOrder := forest.GetDimensionOrder()
+	t.Logf("Dimension order: %v", dimOrder)
+
+	// Debug: Check forest stats
+	debugStats := forest.GetStats()
+	t.Logf("Forest stats: %+v", debugStats)
+
 	// Verify both rules can be found
 	query1 := &QueryRule{
 		Values: map[string]string{

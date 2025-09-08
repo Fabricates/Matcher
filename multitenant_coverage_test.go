@@ -159,15 +159,27 @@ func TestSetAllowDuplicateWeights(t *testing.T) {
 	// Test disabling duplicate weights
 	engine.SetAllowDuplicateWeights(false)
 
-	rule3 := NewRule("rule3").
-		Dimension("product", "TestProduct3", MatchTypeEqual).
-		ManualWeight(10.0).
+	// Add a rule that will intersect with the next one
+	rule3_intersect := NewRule("rule3_intersect").
+		Dimension("product", "Test", MatchTypePrefix). // This will intersect with prefix "Test"
+		ManualWeight(15.0).
 		Build()
 
-	// This should fail because duplicate weights are not allowed
-	err = engine.AddRule(rule3)
+	err = engine.AddRule(rule3_intersect)
+	if err != nil {
+		t.Fatalf("Failed to add intersecting rule: %v", err)
+	}
+
+	// This rule should conflict because it intersects and has the same weight
+	rule3_conflict := NewRule("rule3_conflict").
+		Dimension("product", "TestProduct", MatchTypeEqual). // "TestProduct" matches prefix "Test"
+		ManualWeight(15.0).                                  // Same weight as rule3_intersect
+		Build()
+
+	// This should fail because duplicate weights are not allowed for intersecting rules
+	err = engine.AddRule(rule3_conflict)
 	if err == nil {
-		t.Error("Expected error when adding rule with duplicate weight")
+		t.Error("Expected error when adding rule with duplicate weight that intersects")
 	}
 }
 

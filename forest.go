@@ -3,6 +3,7 @@ package matcher
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -168,8 +169,38 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 		rf.ensureDimensionsInOrder(rule.Dimensions)
 	}
 
+	// Auto-fill missing dimensions with MatchTypeAny if dimension order is established
+	completeRule := &Rule{
+		ID:            rule.ID,
+		TenantID:      rule.TenantID,
+		ApplicationID: rule.ApplicationID,
+		Dimensions:    make([]*DimensionValue, 0),
+		ManualWeight:  rule.ManualWeight,
+		Status:        rule.Status,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+		Metadata:      rule.Metadata,
+	}
+
+	// For each dimension in the established order, either use rule's dimension or add MatchTypeAny
+	for _, dimName := range rf.DimensionOrder {
+		ruleDim := rule.GetDimensionValue(dimName)
+		if ruleDim != nil {
+			// Rule has this dimension - use it
+			completeRule.Dimensions = append(completeRule.Dimensions, ruleDim)
+		} else {
+			// Rule missing this dimension - add as MatchTypeAny with empty value
+			completeRule.Dimensions = append(completeRule.Dimensions, &DimensionValue{
+				DimensionName: dimName,
+				Value:         "",
+				MatchType:     MatchTypeAny,
+			})
+		}
+	}
+
 	// Sort rule dimensions according to our dimension order
-	sortedDims := rf.sortDimensionsByOrder(rule.Dimensions)
+	// Since completeRule.Dimensions was built following rf.DimensionOrder, it's already sorted
+	sortedDims := completeRule.Dimensions
 
 	if len(sortedDims) == 0 {
 		return
@@ -239,10 +270,10 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 	// Add rule to the final node (the node for the last dimension the rule specifies)
 	// Use the original match type from the last dimension
 	finalMatchType := sortedDims[len(sortedDims)-1].MatchType
-	current.AddRule(rule, finalMatchType)
+	current.AddRule(completeRule, finalMatchType)
 
 	// Index the rule for quick removal
-	rf.RuleIndex[rule.ID] = ruleNodes
+	rf.RuleIndex[completeRule.ID] = ruleNodes
 }
 
 // ensureDimensionsInOrder ensures all rule dimensions are in the dimension order
@@ -370,105 +401,86 @@ func (rf *RuleForest) FindCandidateRules(queryValues interface{}) []RuleWithWeig
 	}
 }
 
-// searchTree searches a single tree for matching rules (optimized with slice and status filtering)
-// searchTree recursively searches through a SharedNode tree to find candidate rules
+// searchTree searches a single tree for matching rules following dimension order methodology
 func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules *[]RuleWithWeight, dimensionConfigs map[string]*DimensionConfig) {
 	if node == nil {
 		return
 	}
 
-	// Determine current dimension name if within our dimension order
-	var currentDimName string
-	var hasQueryValue bool
-	var queryValue string
+	// Check if we should continue to the next dimension based on dimension order
+	if depth+1 < len(rf.DimensionOrder) {
+		// Get the next dimension according to dimension order
+		nextDimName := rf.DimensionOrder[depth+1]
+		nextQueryValue, hasNextQueryValue := query.Values[nextDimName]
 
-	if depth < len(rf.DimensionOrder) {
-		currentDimName = rf.DimensionOrder[depth]
-		queryValue, hasQueryValue = query.Values[currentDimName]
-	} else {
-		// Beyond our dimension order, but we should still traverse nodes
-		hasQueryValue = false
-	}
-
-	// Check if this node matches at the current depth
-	nodeMatches := false
-	if depth == 0 {
-		// For root nodes, match against the tree's match type
-		if hasQueryValue {
-			nodeMatches = rf.matchesValue(queryValue, node.Value, rootMatchType)
-		} else {
-			// For partial queries, accept all root nodes and let deeper levels filter
-			nodeMatches = true
-		}
-	} else {
-		// For deeper nodes, match based on the current branch's match type being searched
-		if hasQueryValue {
-			// Instead of exact matching, we should use the match type we're traversing through
-			// This is passed as the rootMatchType parameter (which gets updated as we traverse)
-			nodeMatches = rf.matchesValue(queryValue, node.Value, rootMatchType)
-		} else {
-			// For partial queries, accept all nodes at unspecified dimension levels
-			nodeMatches = true
-		}
-	}
-
-	if !nodeMatches {
-		return
-	}
-
-	// Collect rules from this node (since rules can terminate at any depth)
-	node.mu.RLock()
-	for _, rule := range node.Rules {
-		// Filter by rule status unless IncludeAllRules is true (only collect 'working' rules)
-		// Consider empty status as working (for backward compatibility)
-		if !query.IncludeAllRules && rule.Status != RuleStatusWorking && rule.Status != "" {
-			continue
+		// If the query doesn't specify this dimension, check if we can still continue
+		if !hasNextQueryValue {
+			// We can only continue if there are MatchTypeAny branches at this level
+			// that can handle the missing dimension
+			node.mu.RLock()
+			anyBranch, hasAnyBranch := node.Branches[MatchTypeAny]
+			if hasAnyBranch {
+				// Continue searching in MatchTypeAny branches since they can match missing dimensions
+				for _, child := range anyBranch.Children {
+					rf.searchTree(child, query, depth+1, MatchTypeAny, candidateRules, dimensionConfigs)
+				}
+			}
+			// If no MatchTypeAny branches exist, we cannot continue
+			node.mu.RUnlock()
+			return
 		}
 
-		// For partial queries, check if all specified query dimensions match the rule
-		if rf.ruleMatchesPartialQuery(rule, query) {
-			// Insert rule in weight-ordered position (highest weight at front)
-			rf.insertRuleByWeight(candidateRules, rule, dimensionConfigs)
-		}
-	}
-	node.mu.RUnlock()
-
-	// Continue searching deeper through branches (don't stop at dimension order limit)
-	node.mu.RLock()
-	if hasQueryValue {
-		// If query specifies this dimension, search all branches
+		node.mu.RLock()
+		// Search through branches that could match with the next dimension
 		for branchMatchType, branch := range node.Branches {
-			// OPTIMIZATION: For equal match type branches, we can potentially optimize lookups
-			if branchMatchType == MatchTypeEqual && depth+1 < len(rf.DimensionOrder) {
-				// Check if the next dimension is specified in the query
-				nextDimName := rf.DimensionOrder[depth+1]
-				if nextQueryValue, hasNextQueryValue := query.Values[nextDimName]; hasNextQueryValue {
-					// Direct O(1) lookup for the specific child we're interested in
-					if child, exists := branch.Children[nextQueryValue]; exists {
-						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
-					}
-				} else {
-					// No optimization possible - search all children
-					for _, child := range branch.Children {
+			// For performance, use direct lookup for exact matches when possible
+			if branchMatchType == MatchTypeEqual {
+				if child, exists := branch.Children[nextQueryValue]; exists {
+					if rf.matchesValue(nextQueryValue, child.Value, branchMatchType) {
 						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
 					}
 				}
 			} else {
-				// For non-equal match types or when optimization doesn't apply, iterate through all children
+				// Check all children in this branch
 				for _, child := range branch.Children {
-					rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+					if rf.matchesValue(nextQueryValue, child.Value, branchMatchType) {
+						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+					}
 				}
 			}
 		}
+		node.mu.RUnlock()
 	} else {
-		// If query doesn't specify this dimension, only search MatchTypeAny branches
-		if branch, exists := node.Branches[MatchTypeAny]; exists {
-			for _, child := range branch.Children {
-				rf.searchTree(child, query, depth+1, MatchTypeAny, candidateRules, dimensionConfigs)
+		// We've traversed all dimensions according to dimension order
+		// Check if the current node's dimension value matches the query for the final dimension
+		node.mu.RLock()
+
+		currentDimName := node.DimensionName
+		queryValue, hasQueryValue := query.Values[currentDimName]
+
+		for _, rule := range node.Rules {
+			// Filter by rule status unless IncludeAllRules is true
+			if !query.IncludeAllRules && rule.Status != RuleStatusWorking && rule.Status != "" {
+				continue
+			}
+
+			// Check if this rule matches the query at the current dimension level
+			if hasQueryValue {
+				// Query specifies this dimension - check if rule's dimension matches
+				ruleDim := rule.GetDimensionValue(currentDimName)
+				if ruleDim != nil && rf.matchesValue(queryValue, ruleDim.Value, ruleDim.MatchType) {
+					rf.insertRuleByWeight(candidateRules, rule, dimensionConfigs)
+				}
+			} else {
+				// Query doesn't specify this dimension - rule must have MatchTypeAny or not have this dimension
+				ruleDim := rule.GetDimensionValue(currentDimName)
+				if ruleDim == nil || ruleDim.MatchType == MatchTypeAny {
+					rf.insertRuleByWeight(candidateRules, rule, dimensionConfigs)
+				}
 			}
 		}
+		node.mu.RUnlock()
 	}
-	node.mu.RUnlock()
 }
 
 // resolveDimensionConfigs merges dynamic configs with initialized configs for a query
@@ -489,6 +501,212 @@ func (rf *RuleForest) resolveDimensionConfigs(query *QueryRule) map[string]*Dime
 	}
 
 	return resolvedConfigs
+}
+
+// searchConflict efficiently finds rules that could conflict with the given rule by traversing the forest structure
+func (rf *RuleForest) searchConflict(newRule *Rule, candidateRules *[]*Rule) {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+
+	if len(newRule.Dimensions) == 0 || len(rf.DimensionOrder) == 0 {
+		return
+	}
+
+	// Get the first dimension according to dimension order
+	firstDimName := rf.DimensionOrder[0]
+	firstDim := newRule.GetDimensionValue(firstDimName)
+	if firstDim == nil {
+		// Rule doesn't have the first dimension, can't traverse
+		return
+	}
+
+	firstDimValue := firstDim.Value
+	firstMatchType := firstDim.MatchType
+
+	// Search trees that could potentially intersect with this rule
+	// We need to check different trees based on match type compatibility
+	for treeMatchType, trees := range rf.Trees {
+		if rf.matchTypesCanIntersect(firstMatchType, treeMatchType) {
+			for _, rootNode := range trees {
+				if rf.valuesCanIntersect(firstDimValue, firstMatchType, rootNode.Value, treeMatchType) {
+					rf.searchConflictInTree(rootNode, newRule, 0, candidateRules)
+				}
+			}
+		}
+	}
+}
+
+// searchConflictInTree recursively searches for conflicting rules in a specific tree
+func (rf *RuleForest) searchConflictInTree(node *SharedNode, newRule *Rule, depth int, candidateRules *[]*Rule) {
+	if node == nil {
+		return
+	}
+
+	// Check if we should continue to the next dimension based on dimension order
+	if depth+1 < len(rf.DimensionOrder) {
+		// Get the next dimension according to dimension order
+		nextDimName := rf.DimensionOrder[depth+1]
+		nextDim := newRule.GetDimensionValue(nextDimName)
+
+		// If the new rule doesn't have this dimension, check if we can still continue
+		if nextDim == nil {
+			// We can only continue if there are MatchTypeAny branches at this level
+			// that can handle the missing dimension
+			node.mu.RLock()
+			anyBranch, hasAnyBranch := node.Branches[MatchTypeAny]
+			if hasAnyBranch {
+				// Continue searching in MatchTypeAny branches since they can match missing dimensions
+				for _, child := range anyBranch.Children {
+					rf.searchConflictInTree(child, newRule, depth+1, candidateRules)
+				}
+			}
+			// If no MatchTypeAny branches exist, we cannot continue - return immediately
+			// No rules at this level can intersect with our rule that's missing this dimension
+			node.mu.RUnlock()
+			return
+		}
+
+		nextDimValue := nextDim.Value
+		nextMatchType := nextDim.MatchType
+
+		node.mu.RLock()
+		// Search through branches that could intersect with the next dimension
+		for branchMatchType, branch := range node.Branches {
+			if rf.matchTypesCanIntersect(nextMatchType, branchMatchType) {
+				// For performance, use direct lookup for exact matches when possible
+				if branchMatchType == MatchTypeEqual && nextMatchType == MatchTypeEqual {
+					if child, exists := branch.Children[nextDimValue]; exists {
+						rf.searchConflictInTree(child, newRule, depth+1, candidateRules)
+					}
+				} else {
+					// Check all children in this branch
+					for childValue, child := range branch.Children {
+						if rf.valuesCanIntersect(nextDimValue, nextMatchType, childValue, branchMatchType) {
+							rf.searchConflictInTree(child, newRule, depth+1, candidateRules)
+						}
+					}
+				}
+			}
+		}
+		node.mu.RUnlock()
+	} else {
+		// We've traversed all dimensions according to dimension order
+		// At this point, we only need to check if the current node's dimension value
+		// can intersect with the new rule's corresponding dimension value
+		node.mu.RLock()
+
+		// Get the current dimension name and the new rule's value for this dimension
+		currentDimName := node.DimensionName
+		newRuleDim := newRule.GetDimensionValue(currentDimName)
+
+		if newRuleDim != nil {
+			// New rule has this dimension - check if values can intersect at this dimension level
+			for _, existingRule := range node.Rules {
+				existingRuleDim := existingRule.GetDimensionValue(currentDimName)
+				if existingRuleDim != nil {
+					if rf.valuesCanIntersect(newRuleDim.Value, newRuleDim.MatchType, existingRuleDim.Value, existingRuleDim.MatchType) {
+						*candidateRules = append(*candidateRules, existingRule)
+					}
+				}
+			}
+		} else {
+			// New rule is missing this dimension - can intersect with MatchTypeAny rules
+			for _, existingRule := range node.Rules {
+				existingRuleDim := existingRule.GetDimensionValue(currentDimName)
+				if existingRuleDim != nil && existingRuleDim.MatchType == MatchTypeAny {
+					*candidateRules = append(*candidateRules, existingRule)
+				}
+			}
+		}
+
+		node.mu.RUnlock()
+
+		// Stop here - don't search deeper since we've exhausted the new rule's dimensions
+		// according to the dimension order
+	}
+}
+
+// matchTypesCanIntersect checks if two match types can potentially intersect
+func (rf *RuleForest) matchTypesCanIntersect(matchType1, matchType2 MatchType) bool {
+	// MatchTypeAny can intersect with any match type
+	if matchType1 == MatchTypeAny || matchType2 == MatchTypeAny {
+		return true
+	}
+
+	// Same match types can intersect
+	if matchType1 == matchType2 {
+		return true
+	}
+
+	// Prefix and suffix can intersect with equal if the values are compatible
+	// Equal can intersect with prefix/suffix if the values are compatible
+	if (matchType1 == MatchTypeEqual && (matchType2 == MatchTypePrefix || matchType2 == MatchTypeSuffix)) ||
+		(matchType2 == MatchTypeEqual && (matchType1 == MatchTypePrefix || matchType1 == MatchTypeSuffix)) {
+		return true
+	}
+
+	// Prefix and suffix can potentially intersect (e.g., prefix "abc" and suffix "cde" both match "abcde")
+	if (matchType1 == MatchTypePrefix && matchType2 == MatchTypeSuffix) ||
+		(matchType1 == MatchTypeSuffix && matchType2 == MatchTypePrefix) {
+		return true
+	}
+
+	return false
+}
+
+// valuesCanIntersect checks if two dimension values with their match types can intersect
+func (rf *RuleForest) valuesCanIntersect(value1 string, matchType1 MatchType, value2 string, matchType2 MatchType) bool {
+	// MatchTypeAny always intersects
+	if matchType1 == MatchTypeAny || matchType2 == MatchTypeAny {
+		return true
+	}
+
+	// Equal match types
+	if matchType1 == MatchTypeEqual && matchType2 == MatchTypeEqual {
+		return value1 == value2
+	}
+
+	// Prefix match types
+	if matchType1 == MatchTypePrefix && matchType2 == MatchTypePrefix {
+		// Two prefixes intersect if one is a prefix of the other
+		return strings.HasPrefix(value1, value2) || strings.HasPrefix(value2, value1)
+	}
+
+	// Suffix match types
+	if matchType1 == MatchTypeSuffix && matchType2 == MatchTypeSuffix {
+		// Two suffixes intersect if one is a suffix of the other
+		return strings.HasSuffix(value1, value2) || strings.HasSuffix(value2, value1)
+	}
+
+	// Equal with Prefix
+	if matchType1 == MatchTypeEqual && matchType2 == MatchTypePrefix {
+		return strings.HasPrefix(value1, value2)
+	}
+	if matchType1 == MatchTypePrefix && matchType2 == MatchTypeEqual {
+		return strings.HasPrefix(value2, value1)
+	}
+
+	// Equal with Suffix
+	if matchType1 == MatchTypeEqual && matchType2 == MatchTypeSuffix {
+		return strings.HasSuffix(value1, value2)
+	}
+	if matchType1 == MatchTypeSuffix && matchType2 == MatchTypeEqual {
+		return strings.HasSuffix(value2, value1)
+	}
+
+	// Prefix with Suffix
+	if matchType1 == MatchTypePrefix && matchType2 == MatchTypeSuffix {
+		// Check if there exists a string that starts with value1 and ends with value2
+		// This is true if value1 + value2 is not longer than any reasonable string
+		// or if value2 is contained within a string that starts with value1
+		// For simplicity, we'll say they can intersect if they don't conflict in length
+		return len(value1)+len(value2) <= 1000 // reasonable max string length
+	}
+	if matchType1 == MatchTypeSuffix && matchType2 == MatchTypePrefix {
+		return len(value1)+len(value2) <= 1000 // reasonable max string length
+	}
+
+	return false
 }
 
 // insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
@@ -526,33 +744,6 @@ func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRu
 		copy((*candidateRules)[insertPos+1:], (*candidateRules)[insertPos:])
 		(*candidateRules)[insertPos] = RuleWithWeight{newRule, newWeight}
 	}
-}
-
-// ruleMatchesPartialQuery checks if a rule matches all dimensions specified in a partial query
-func (rf *RuleForest) ruleMatchesPartialQuery(rule *Rule, query *QueryRule) bool {
-	// Check each dimension specified in the query
-	for queryDimName, queryValue := range query.Values {
-		// Find the corresponding dimension in the rule
-		var ruleDim *DimensionValue
-		for _, dim := range rule.Dimensions {
-			if dim.DimensionName == queryDimName {
-				ruleDim = dim
-				break
-			}
-		}
-
-		// If rule doesn't have this dimension, it doesn't match
-		if ruleDim == nil {
-			return false
-		}
-
-		// Check if the rule dimension matches the query value
-		if !rf.matchesValue(queryValue, ruleDim.Value, ruleDim.MatchType) {
-			return false
-		}
-	}
-
-	return true
 }
 
 // matchesValue checks if a query value matches a rule value with the given match type

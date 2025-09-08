@@ -131,12 +131,12 @@ func TestAPIUpdateRule(t *testing.T) {
 		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
 
-	// This should not fail - updateRule handles non-existent rules gracefully
-	if err := engine.UpdateRule(nonExistentRule); err != nil {
-		t.Errorf("UpdateRule should handle non-existent rules gracefully: %v", err)
+	// This should fail - updateRule should only update existing rules
+	if err := engine.UpdateRule(nonExistentRule); err == nil {
+		t.Error("UpdateRule should return an error for non-existent rules")
 	}
 
-	// Verify the non-existent rule was added
+	// Verify the non-existent rule was not added
 	nonExistentQuery := &QueryRule{
 		Values: map[string]string{
 			"region": "us-west",
@@ -148,7 +148,7 @@ func TestAPIUpdateRule(t *testing.T) {
 		t.Fatalf("FindAllMatches failed for non-existent rule query: %v", err)
 	}
 
-	// Should find the newly added rule
+	// Should not find the rule since it was not created
 	found := false
 	for _, match := range matches {
 		if match.Rule.ID == "non-existent" {
@@ -157,8 +157,8 @@ func TestAPIUpdateRule(t *testing.T) {
 		}
 	}
 
-	if !found {
-		t.Error("Expected to find the non-existent rule after update")
+	if found {
+		t.Error("Non-existent rule should not have been created by UpdateRule")
 	}
 }
 
