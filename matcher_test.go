@@ -705,3 +705,457 @@ func TestRebuild(t *testing.T) {
 		t.Fatalf("Expected rule 'rebuild_test_1' after rebuild, got %s", result.Rule.ID)
 	}
 }
+
+func TestExcludeRules(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude")
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add multiple test rules
+	rules := []*Rule{
+		NewRule("rule1").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(10.0).
+			Build(),
+		NewRule("rule2").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(8.0).
+			Build(),
+		NewRule("rule3").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(6.0).
+			Build(),
+		NewRule("rule4").
+			Dimension("product", "ProductB", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(5.0).
+			Build(),
+	}
+
+	// Allow duplicate weights for this test
+	engine.allowDuplicateWeights = true
+
+	for _, rule := range rules {
+		err = engine.AddRule(rule)
+		if err != nil {
+			t.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+		}
+	}
+
+	t.Run("NoExclusions", func(t *testing.T) {
+		// Test without exclusions - should find the highest weight rule
+		query := CreateQuery(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "rule1" {
+			t.Errorf("Expected rule 'rule1' (highest weight), got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeHighestWeight", func(t *testing.T) {
+		// Exclude the highest weight rule - should find the second highest
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"rule1"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "rule2" {
+			t.Errorf("Expected rule 'rule2' (second highest weight), got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeMultipleRules", func(t *testing.T) {
+		// Exclude multiple rules
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"rule1", "rule2"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "rule3" {
+			t.Errorf("Expected rule 'rule3' (third highest weight), got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeAllMatchingRules", func(t *testing.T) {
+		// Exclude all matching rules for ProductA
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"rule1", "rule2", "rule3"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result != nil {
+			t.Errorf("Expected no match but got rule '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeNonExistentRule", func(t *testing.T) {
+		// Exclude a rule that doesn't exist - should not affect results
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"nonexistent_rule"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "rule1" {
+			t.Errorf("Expected rule 'rule1' (highest weight), got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("EmptyExcludeList", func(t *testing.T) {
+		// Empty exclude list - should behave normally
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "rule1" {
+			t.Errorf("Expected rule 'rule1' (highest weight), got '%s'", result.Rule.ID)
+		}
+	})
+}
+
+func TestExcludeRulesWithFindAllMatches(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-all")
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add multiple test rules
+	rules := []*Rule{
+		NewRule("all_rule1").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(10.0).
+			Build(),
+		NewRule("all_rule2").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(8.0).
+			Build(),
+		NewRule("all_rule3").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(6.0).
+			Build(),
+	}
+
+	// Allow duplicate weights for this test
+	engine.allowDuplicateWeights = true
+
+	for _, rule := range rules {
+		err = engine.AddRule(rule)
+		if err != nil {
+			t.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+		}
+	}
+
+	t.Run("FindAllWithoutExclusions", func(t *testing.T) {
+		query := CreateQuery(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		})
+
+		results, err := engine.FindAllMatches(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if len(results) != 3 {
+			t.Fatalf("Expected 3 matches, got %d", len(results))
+		}
+
+		// Results should be ordered by weight (descending)
+		expectedOrder := []string{"all_rule1", "all_rule2", "all_rule3"}
+		for i, result := range results {
+			if result.Rule.ID != expectedOrder[i] {
+				t.Errorf("Expected rule '%s' at position %d, got '%s'", expectedOrder[i], i, result.Rule.ID)
+			}
+		}
+	})
+
+	t.Run("FindAllWithExclusions", func(t *testing.T) {
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"all_rule2"})
+
+		results, err := engine.FindAllMatches(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if len(results) != 2 {
+			t.Fatalf("Expected 2 matches, got %d", len(results))
+		}
+
+		// Should exclude all_rule2
+		expectedRules := []string{"all_rule1", "all_rule3"}
+		for i, result := range results {
+			if result.Rule.ID != expectedRules[i] {
+				t.Errorf("Expected rule '%s' at position %d, got '%s'", expectedRules[i], i, result.Rule.ID)
+			}
+		}
+
+		// Verify all_rule2 is not in results
+		for _, result := range results {
+			if result.Rule.ID == "all_rule2" {
+				t.Error("Rule 'all_rule2' should have been excluded")
+			}
+		}
+	})
+
+	t.Run("FindAllExcludeAllRules", func(t *testing.T) {
+		query := CreateQueryWithExcludedRules(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"all_rule1", "all_rule2", "all_rule3"})
+
+		results, err := engine.FindAllMatches(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if len(results) != 0 {
+			t.Fatalf("Expected 0 matches, got %d", len(results))
+		}
+	})
+}
+
+func TestExcludeRulesWithTenants(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-tenants")
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add rules for different tenants
+	rules := []*Rule{
+		NewRuleWithTenant("tenant1_rule1", "tenant1", "app1").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(10.0).
+			Build(),
+		NewRuleWithTenant("tenant1_rule2", "tenant1", "app1").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(8.0).
+			Build(),
+		NewRuleWithTenant("tenant2_rule1", "tenant2", "app1").
+			Dimension("product", "ProductA", MatchTypeEqual).
+			Dimension("route", "main", MatchTypeEqual).
+			ManualWeight(12.0).
+			Build(),
+	}
+
+	// Allow duplicate weights for this test
+	engine.allowDuplicateWeights = true
+
+	for _, rule := range rules {
+		err = engine.AddRule(rule)
+		if err != nil {
+			t.Fatalf("Failed to add rule %s: %v", rule.ID, err)
+		}
+	}
+
+	t.Run("ExcludeRulesWithTenant", func(t *testing.T) {
+		// Exclude tenant1_rule1, should find tenant1_rule2
+		query := CreateQueryWithTenantAndExcluded("tenant1", "app1", map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"tenant1_rule1"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "tenant1_rule2" {
+			t.Errorf("Expected rule 'tenant1_rule2', got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeOtherTenantRule", func(t *testing.T) {
+		// Try to exclude tenant2 rule from tenant1 query - should have no effect
+		query := CreateQueryWithTenantAndExcluded("tenant1", "app1", map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"tenant2_rule1"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		// Should still find tenant1_rule1 (highest weight for tenant1)
+		if result.Rule.ID != "tenant1_rule1" {
+			t.Errorf("Expected rule 'tenant1_rule1', got '%s'", result.Rule.ID)
+		}
+	})
+}
+
+func TestExcludeRulesWithDraftStatus(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-draft")
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add rules with different statuses
+	workingRule := NewRule("working_rule").
+		Dimension("product", "ProductA", MatchTypeEqual).
+		Dimension("route", "main", MatchTypeEqual).
+		Status(RuleStatusWorking).
+		ManualWeight(10.0).
+		Build()
+
+	draftRule := NewRule("draft_rule").
+		Dimension("product", "ProductA", MatchTypeEqual).
+		Dimension("route", "main", MatchTypeEqual).
+		Status(RuleStatusDraft).
+		ManualWeight(15.0). // Higher weight but draft
+		Build()
+
+	// Allow duplicate weights for this test
+	engine.allowDuplicateWeights = true
+
+	err = engine.AddRule(workingRule)
+	if err != nil {
+		t.Fatalf("Failed to add working rule: %v", err)
+	}
+
+	err = engine.AddRule(draftRule)
+	if err != nil {
+		t.Fatalf("Failed to add draft rule: %v", err)
+	}
+
+	t.Run("ExcludeWorkingRuleFromAllRulesQuery", func(t *testing.T) {
+		// Query all rules but exclude the working rule - should find only draft
+		query := CreateQueryWithAllRulesAndExcluded(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"working_rule"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "draft_rule" {
+			t.Errorf("Expected rule 'draft_rule', got '%s'", result.Rule.ID)
+		}
+	})
+
+	t.Run("ExcludeDraftRuleFromAllRulesQuery", func(t *testing.T) {
+		// Query all rules but exclude the draft rule - should find working rule
+		query := CreateQueryWithAllRulesAndExcluded(map[string]string{
+			"product": "ProductA",
+			"route":   "main",
+		}, []string{"draft_rule"})
+
+		result, err := engine.FindBestMatch(query)
+		if err != nil {
+			t.Fatalf("Query failed: %v", err)
+		}
+
+		if result == nil {
+			t.Fatal("Expected match but got none")
+		}
+
+		if result.Rule.ID != "working_rule" {
+			t.Errorf("Expected rule 'working_rule', got '%s'", result.Rule.ID)
+		}
+	})
+}

@@ -199,7 +199,7 @@ func generateDimensions(count int) []*DimensionConfig {
 		dimensions[i] = NewDimensionConfig(
 			dimensionNames[i%len(dimensionNames)]+fmt.Sprintf("_%d", i/len(dimensionNames)),
 			i,
-			i < 3,            // First 3 dimensions are required
+			i < 3, // First 3 dimensions are required
 		)
 	}
 	return dimensions

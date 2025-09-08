@@ -592,13 +592,18 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 			continue // Skip rules that don't exist in m.rules (being updated)
 		}
 
-		// Check 2: The rule from m.rules must actually match this query
+		// Check 2: Skip excluded rules
+		if m.isRuleExcluded(actualRule.ID, query.ExcludeRules) {
+			continue // Skip rules that are explicitly excluded
+		}
+
+		// Check 3: The rule from m.rules must actually match this query
 		// This prevents returning rules that matched old dimensions but not current ones
 		if !m.isFullMatch(actualRule, query) {
 			continue // Skip rules whose current dimensions don't match this query
 		}
 
-		// Check 3: Verify the candidate rule from forest has same dimensions as m.rules
+		// Check 4: Verify the candidate rule from forest has same dimensions as m.rules
 		// This catches cases where forest has stale entries during updates
 		if !m.dimensionsEqual(candidate.Rule, actualRule) {
 			continue // Skip stale forest entries
@@ -700,6 +705,15 @@ func (m *InMemoryMatcher) countMatchedDimensions(rule *Rule, query *QueryRule) i
 		}
 	}
 	return count
+}
+
+// isRuleExcluded checks if a rule ID is in the map of excluded rules
+func (m *InMemoryMatcher) isRuleExcluded(ruleID string, excludeRules map[string]bool) bool {
+	if len(excludeRules) == 0 {
+		return false
+	}
+
+	return excludeRules[ruleID]
 }
 
 // validateRule validates a rule before adding it
