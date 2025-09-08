@@ -378,6 +378,51 @@ result, err := engine.FindBestMatch(partialQuery)
 
 **Important**: Partial queries only traverse `MatchTypeAny` branches for unspecified dimensions. If you want rules to be found by partial queries, store the optional dimensions with `MatchTypeAny`.
 
+### Rule Exclusion
+
+The engine supports excluding specific rules from query results, useful for A/B testing, rule versioning, or temporarily disabling rules:
+
+```go
+// Create multiple rules
+rule1 := matcher.NewRule("rule1").
+    Product("ProductA", matcher.MatchTypeEqual, 10.0).
+    Route("main", matcher.MatchTypeEqual, 5.0).
+    ManualWeight(15.0).
+    Build()
+
+rule2 := matcher.NewRule("rule2").
+    Product("ProductA", matcher.MatchTypeEqual, 10.0).
+    Route("main", matcher.MatchTypeEqual, 5.0).
+    ManualWeight(10.0).
+    Build()
+
+engine.AddRule(rule1)
+engine.AddRule(rule2)
+
+// Regular query - finds highest weight rule
+query := matcher.CreateQuery(map[string]string{
+    "product": "ProductA",
+    "route":   "main",
+})
+result, _ := engine.FindBestMatch(query) // Returns rule1 (weight: 15.0)
+
+// Query excluding specific rules
+excludeQuery := matcher.CreateQueryWithExcludedRules(map[string]string{
+    "product": "ProductA",
+    "route":   "main",
+}, []string{"rule1"})
+result, _ = engine.FindBestMatch(excludeQuery) // Returns rule2 (weight: 10.0)
+
+// Works with FindAllMatches too
+allMatches, _ := engine.FindAllMatches(excludeQuery) // Returns only rule2
+```
+
+#### Use Cases
+- **A/B Testing**: Exclude certain rule variants from specific user segments
+- **Rule Versioning**: Temporarily exclude old rule versions during migration
+- **Debugging**: Isolate specific rules during troubleshooting
+- **Feature Flags**: Dynamically enable/disable rules without deletion
+
 ### Custom Dimensions
 
 ```go

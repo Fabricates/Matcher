@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -62,6 +63,16 @@ func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
 		keyString += "|include_all:true"
 	} else {
 		keyString += "|include_all:false"
+	}
+
+	// Include excluded rules in the cache key
+	if len(query.ExcludeRules) > 0 {
+		var excludedRuleIDs []string
+		for ruleID := range query.ExcludeRules {
+			excludedRuleIDs = append(excludedRuleIDs, ruleID)
+		}
+		sort.Strings(excludedRuleIDs) // Sort for consistent key generation
+		keyString += "|exclude:" + strings.Join(excludedRuleIDs, ",")
 	}
 
 	// Include tenant and application context to ensure isolation

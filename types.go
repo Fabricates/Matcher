@@ -112,11 +112,12 @@ type RuleWithWeight struct {
 
 // QueryRule represents a query with values for each dimension
 type QueryRule struct {
-	TenantID                string                      `json:"tenant_id,omitempty"`                 // Tenant identifier for scoped queries
-	ApplicationID           string                      `json:"application_id,omitempty"`            // Application identifier for scoped queries
-	Values                  map[string]string           `json:"values"`                              // dimension_name -> value
-	IncludeAllRules         bool                        `json:"include_all_rules"`                   // When true, includes draft rules in search; defaults to false (working rules only)
-	DynamicDimensionConfigs map[string]*DimensionConfig `json:"dynamic_dimension_configs,omitempty"` // Optional: Override dimension configs for this query
+	TenantID                string                      `json:"tenant_id,omitempty"`
+	ApplicationID           string                      `json:"application_id,omitempty"`
+	Values                  map[string]string           `json:"values"`
+	IncludeAllRules         bool                        `json:"include_all_rules,omitempty"`
+	DynamicDimensionConfigs map[string]*DimensionConfig `json:"dynamic_dimension_configs,omitempty"`
+	ExcludeRules            map[string]bool             `json:"exclude_rules,omitempty"`
 }
 
 // MatchResult represents the result of a rule matching operation

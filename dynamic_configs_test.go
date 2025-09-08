@@ -318,13 +318,13 @@ func TestDynamicConfigsWithMultipleMatchTypes(t *testing.T) {
 
 	// Create dimension config with different weights for different match types
 	priorityConfig := NewDimensionConfig("priority", 0, true) // default weight 1.0
-	priorityConfig.SetWeight(MatchTypeEqual, 10.0)                 // exact matches get 10.0
-	priorityConfig.SetWeight(MatchTypePrefix, 5.0)                 // prefix matches get 5.0
-	priorityConfig.SetWeight(MatchTypeAny, 2.0)                    // any matches get 2.0
+	priorityConfig.SetWeight(MatchTypeEqual, 10.0)            // exact matches get 10.0
+	priorityConfig.SetWeight(MatchTypePrefix, 5.0)            // prefix matches get 5.0
+	priorityConfig.SetWeight(MatchTypeAny, 2.0)               // any matches get 2.0
 
 	categoryConfig := NewDimensionConfig("category", 1, true) // default weight 1.0
-	categoryConfig.SetWeight(MatchTypeEqual, 8.0)                  // exact matches get 8.0
-	categoryConfig.SetWeight(MatchTypeSuffix, 3.0)                 // suffix matches get 3.0
+	categoryConfig.SetWeight(MatchTypeEqual, 8.0)             // exact matches get 8.0
+	categoryConfig.SetWeight(MatchTypeSuffix, 3.0)            // suffix matches get 3.0
 
 	err = engine.AddDimension(priorityConfig)
 	if err != nil {

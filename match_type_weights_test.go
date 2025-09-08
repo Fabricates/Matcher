@@ -17,14 +17,14 @@ func TestMatchTypeBasedWeights(t *testing.T) {
 
 	// Create dimension config with different weights per match type
 	regionConfig := NewDimensionConfig("region", 0, false) // Default weight
-	regionConfig.SetWeight(MatchTypeEqual, 10.0)                // Higher weight for exact matches
-	regionConfig.SetWeight(MatchTypePrefix, 7.0)                // Medium weight for prefix matches
-	regionConfig.SetWeight(MatchTypeSuffix, 6.0)                // Lower weight for suffix matches
-	regionConfig.SetWeight(MatchTypeAny, 3.0)                   // Lowest weight for any matches
+	regionConfig.SetWeight(MatchTypeEqual, 10.0)           // Higher weight for exact matches
+	regionConfig.SetWeight(MatchTypePrefix, 7.0)           // Medium weight for prefix matches
+	regionConfig.SetWeight(MatchTypeSuffix, 6.0)           // Lower weight for suffix matches
+	regionConfig.SetWeight(MatchTypeAny, 3.0)              // Lowest weight for any matches
 
 	envConfig := NewDimensionConfig("env", 1, false) // Default weight
-	envConfig.SetWeight(MatchTypeEqual, 8.0)              // High weight for exact env matches
-	envConfig.SetWeight(MatchTypeAny, 1.0)                // Low weight for any env matches
+	envConfig.SetWeight(MatchTypeEqual, 8.0)         // High weight for exact env matches
+	envConfig.SetWeight(MatchTypeAny, 1.0)           // Low weight for any env matches
 
 	// Add dimension configs
 	err = engine.AddDimension(regionConfig)

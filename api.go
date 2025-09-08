@@ -428,6 +428,62 @@ func CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID stri
 	}
 }
 
+// CreateQueryWithExcludedRules creates a query that excludes specific rules by ID
+func CreateQueryWithExcludedRules(values map[string]string, excludeRuleIDs []string) *QueryRule {
+	excludeMap := make(map[string]bool)
+	for _, ruleID := range excludeRuleIDs {
+		excludeMap[ruleID] = true
+	}
+	return &QueryRule{
+		Values:          values,
+		IncludeAllRules: false, // Default to working rules only
+		ExcludeRules:    excludeMap,
+	}
+}
+
+// CreateQueryWithAllRulesAndExcluded creates a query that includes all rules but excludes specific ones
+func CreateQueryWithAllRulesAndExcluded(values map[string]string, excludeRuleIDs []string) *QueryRule {
+	excludeMap := make(map[string]bool)
+	for _, ruleID := range excludeRuleIDs {
+		excludeMap[ruleID] = true
+	}
+	return &QueryRule{
+		Values:          values,
+		IncludeAllRules: true,
+		ExcludeRules:    excludeMap,
+	}
+}
+
+// CreateQueryWithTenantAndExcluded creates a tenant-scoped query with excluded rules
+func CreateQueryWithTenantAndExcluded(tenantID, applicationID string, values map[string]string, excludeRuleIDs []string) *QueryRule {
+	excludeMap := make(map[string]bool)
+	for _, ruleID := range excludeRuleIDs {
+		excludeMap[ruleID] = true
+	}
+	return &QueryRule{
+		TenantID:        tenantID,
+		ApplicationID:   applicationID,
+		Values:          values,
+		IncludeAllRules: false, // Default to working rules only
+		ExcludeRules:    excludeMap,
+	}
+}
+
+// CreateQueryWithAllRulesTenantAndExcluded creates a comprehensive query with tenant scope, all rules, and exclusions
+func CreateQueryWithAllRulesTenantAndExcluded(tenantID, applicationID string, values map[string]string, excludeRuleIDs []string) *QueryRule {
+	excludeMap := make(map[string]bool)
+	for _, ruleID := range excludeRuleIDs {
+		excludeMap[ruleID] = true
+	}
+	return &QueryRule{
+		TenantID:        tenantID,
+		ApplicationID:   applicationID,
+		Values:          values,
+		IncludeAllRules: true,
+		ExcludeRules:    excludeMap,
+	}
+}
+
 // GetForestStats returns detailed forest index statistics
 func (me *MatcherEngine) GetForestStats() map[string]interface{} {
 	me.matcher.mu.RLock()
