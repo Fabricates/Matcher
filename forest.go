@@ -357,13 +357,13 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 			// OPTIMIZATION: For equal match types, use hash index for O(1) direct lookup
 			indexKey := firstDimName + ":" + firstDimValue
 			if tree, exists := rf.EqualTreesIndex[indexKey]; exists {
-				rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
+				rf.searchTree(tree, query, 0, &candidateRules, dimensionConfigs)
 			}
 		} else {
 			// For non-equal match types or when we don't have the first dimension value,
 			// iterate through all trees (no optimization possible)
 			for _, tree := range trees {
-				rf.searchTree(tree, query, 0, matchType, &candidateRules, dimensionConfigs)
+				rf.searchTree(tree, query, 0, &candidateRules, dimensionConfigs)
 			}
 		}
 	}
@@ -395,7 +395,7 @@ func (rf *RuleForest) FindCandidateRules(queryValues interface{}) []RuleWithWeig
 }
 
 // searchTree searches a single tree for matching rules following dimension order methodology
-func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, rootMatchType MatchType, candidateRules *[]RuleWithWeight, dimensionConfigs map[string]*DimensionConfig) {
+func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, candidateRules *[]RuleWithWeight, dimensionConfigs map[string]*DimensionConfig) {
 	if node == nil {
 		return
 	}
@@ -415,7 +415,7 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 			if hasAnyBranch {
 				// Continue searching in MatchTypeAny branches since they can match missing dimensions
 				for _, child := range anyBranch.Children {
-					rf.searchTree(child, query, depth+1, MatchTypeAny, candidateRules, dimensionConfigs)
+					rf.searchTree(child, query, depth+1, candidateRules, dimensionConfigs)
 				}
 			}
 			// If no MatchTypeAny branches exist, we cannot continue
@@ -430,14 +430,14 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 			if branchMatchType == MatchTypeEqual {
 				if child, exists := branch.Children[nextQueryValue]; exists {
 					if rf.matchesValue(nextQueryValue, child.Value, branchMatchType) {
-						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+						rf.searchTree(child, query, depth+1, candidateRules, dimensionConfigs)
 					}
 				}
 			} else {
 				// Check all children in this branch
 				for _, child := range branch.Children {
 					if rf.matchesValue(nextQueryValue, child.Value, branchMatchType) {
-						rf.searchTree(child, query, depth+1, branchMatchType, candidateRules, dimensionConfigs)
+						rf.searchTree(child, query, depth+1, candidateRules, dimensionConfigs)
 					}
 				}
 			}

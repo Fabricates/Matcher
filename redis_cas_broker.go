@@ -2,18 +2,32 @@ package matcher
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"os"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
+// RedisClientInterface defines the common interface for all Redis client types
+type RedisClientInterface interface {
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Watch(ctx context.Context, fn func(*redis.Tx) error, keys ...string) error
+	TxPipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error)
+	Ping(ctx context.Context) *redis.StatusCmd
+	Close() error
+}
+
 // RedisCASBroker implements Broker using Redis with Compare-And-Swap operations
 // It uses a fixed event key for CAS operations - no initialization, only latest event
 type RedisCASBroker struct {
-	client       *redis.Client
+	client       RedisClientInterface
 	nodeID       string
 	eventKey     string // Fixed Redis key for CAS operations
 	subscription chan<- *Event
@@ -29,11 +43,42 @@ type RedisCASBroker struct {
 }
 
 // RedisCASConfig holds configuration for Redis CAS broker
+// Auto-detects deployment type based on provided parameters:
+// - Single address without MasterName = Single node
+// - Multiple addresses without MasterName = Cluster
+// - MasterName provided = Sentinel (addresses are sentinel servers)
 type RedisCASConfig struct {
-	RedisAddr    string        // Redis server address (e.g., "localhost:6379")
-	Password     string        // Redis password (empty if no password)
-	DB           int           // Redis database number
-	NodeID       string        // Node identifier
+	// Redis server configuration (auto-detects deployment type)
+	Addrs      []string // Redis server addresses - single for standalone, multiple for cluster/sentinel
+	MasterName string   // Master name for sentinel deployment (if provided, Addrs are sentinel servers)
+
+	// Authentication
+	Username       string // Redis username (for Redis 6.0+ ACL)
+	Password       string // Redis password
+	SentinelUser   string // Sentinel username (for sentinel deployment)
+	SentinelPasswd string // Sentinel password (for sentinel deployment)
+	DB             int    // Redis database number (ignored for cluster)
+
+	// Connection settings
+	MaxRetries      int           // Maximum number of retries (default: 3)
+	MinRetryBackoff time.Duration // Minimum backoff between retries (default: 8ms)
+	MaxRetryBackoff time.Duration // Maximum backoff between retries (default: 512ms)
+	DialTimeout     time.Duration // Dial timeout (default: 5s)
+	ReadTimeout     time.Duration // Read timeout (default: 3s)
+	WriteTimeout    time.Duration // Write timeout (default: 3s)
+	PoolSize        int           // Connection pool size (default: 10 per CPU)
+	MinIdleConns    int           // Minimum idle connections (default: 0)
+
+	// TLS configuration
+	TLSEnabled      bool   // Enable TLS
+	TLSInsecureSkip bool   // Skip certificate verification
+	TLSServerName   string // Server name for certificate verification
+	TLSCertFile     string // Client certificate file path
+	TLSKeyFile      string // Client private key file path
+	TLSCAFile       string // CA certificate file path
+
+	// Broker-specific configuration
+	NodeID       string        // Node identifier (required)
 	Namespace    string        // Namespace for keys (optional, defaults to "matcher")
 	PollInterval time.Duration // How often to poll for changes (defaults to 2s, should be 1-5s)
 }
@@ -46,49 +91,267 @@ type LatestEvent struct {
 }
 
 // NewRedisCASBroker creates a new Redis CAS-based broker
+// Auto-detects deployment type based on configuration:
+// - Single address without MasterName = Single node
+// - Multiple addresses without MasterName = Cluster
+// - MasterName provided = Sentinel (addresses are sentinel servers)
 // Does NOT initialize any default values in Redis
 func NewRedisCASBroker(config RedisCASConfig) (*RedisCASBroker, error) {
-	// Create Redis client
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     config.RedisAddr,
-		Password: config.Password,
-		DB:       config.DB,
-	})
+	// Validate configuration
+	if err := validateRedisCASConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Set configuration defaults
+	config = setRedisCASDefaults(config)
+
+	// Create TLS config if enabled
+	var tlsConfig *tls.Config
+	if config.TLSEnabled {
+		var err error
+		tlsConfig, err = createTLSConfig(config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+	}
+
+	// Create Redis client based on auto-detected deployment type
+	var client RedisClientInterface
+	var err error
+
+	if config.MasterName != "" {
+		// Sentinel deployment - addresses are sentinel servers
+		client, err = createSentinelClient(config, tlsConfig)
+	} else if len(config.Addrs) > 1 {
+		// Cluster deployment - multiple addresses
+		client, err = createClusterClient(config, tlsConfig)
+	} else if len(config.Addrs) == 1 {
+		// Single node deployment - one address
+		client, err = createSingleNodeClient(config, tlsConfig)
+	} else {
+		return nil, fmt.Errorf("no Redis addresses provided")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Redis client: %w", err)
+	}
 
 	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), config.DialTimeout)
 	defer cancel()
 
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	if err := client.Ping(ctx).Err(); err != nil {
+		client.Close()
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	// Set defaults
-	namespace := config.Namespace
-	if namespace == "" {
-		namespace = "matcher"
-	}
-
-	pollInterval := config.PollInterval
-	if pollInterval == 0 {
-		pollInterval = 2 * time.Second // Default to 2 seconds
-	}
-	if pollInterval < 1*time.Second || pollInterval > 5*time.Second {
-		return nil, fmt.Errorf("poll interval must be between 1-5 seconds, got %v", pollInterval)
-	}
-
+	// Create broker instance
 	broker := &RedisCASBroker{
-		client:       rdb,
+		client:       client,
 		nodeID:       config.NodeID,
-		eventKey:     fmt.Sprintf("%s:events", namespace),
+		eventKey:     fmt.Sprintf("%s:events", config.Namespace),
 		stopChan:     make(chan struct{}),
-		pollInterval: pollInterval,
+		pollInterval: config.PollInterval,
 	}
 
 	// Load current state if key exists (don't create if it doesn't exist)
 	_ = broker.loadCurrentState(context.Background())
 
 	return broker, nil
+}
+
+// validateRedisCASConfig validates the Redis CAS configuration
+func validateRedisCASConfig(config RedisCASConfig) error {
+	if config.NodeID == "" {
+		return fmt.Errorf("NodeID is required")
+	}
+
+	if len(config.Addrs) == 0 {
+		return fmt.Errorf("at least one Redis address is required")
+	}
+
+	// Validate sentinel-specific configuration
+	if config.MasterName != "" && len(config.Addrs) == 0 {
+		return fmt.Errorf("sentinel addresses are required when MasterName is provided")
+	}
+
+	if config.PollInterval != 0 && (config.PollInterval < 1*time.Second || config.PollInterval > 5*time.Second) {
+		return fmt.Errorf("PollInterval must be between 1-5 seconds, got %v", config.PollInterval)
+	}
+
+	return nil
+}
+
+// setRedisCASDefaults sets default values for Redis CAS configuration
+func setRedisCASDefaults(config RedisCASConfig) RedisCASConfig {
+	if config.Namespace == "" {
+		config.Namespace = "matcher"
+	}
+
+	if config.PollInterval == 0 {
+		config.PollInterval = 2 * time.Second
+	}
+
+	if config.MaxRetries == 0 {
+		config.MaxRetries = 3
+	}
+
+	if config.MinRetryBackoff == 0 {
+		config.MinRetryBackoff = 8 * time.Millisecond
+	}
+
+	if config.MaxRetryBackoff == 0 {
+		config.MaxRetryBackoff = 512 * time.Millisecond
+	}
+
+	if config.DialTimeout == 0 {
+		config.DialTimeout = 5 * time.Second
+	}
+
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = 3 * time.Second
+	}
+
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = 3 * time.Second
+	}
+
+	if config.PoolSize == 0 {
+		config.PoolSize = 10 * runtime.GOMAXPROCS(0)
+	}
+
+	return config
+}
+
+// createTLSConfig creates a TLS configuration from the provided settings
+func createTLSConfig(config RedisCASConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: config.TLSInsecureSkip,
+		ServerName:         config.TLSServerName,
+	}
+
+	// Load client certificate if provided
+	if config.TLSCertFile != "" && config.TLSKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(config.TLSCertFile, config.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	// Load CA certificate if provided
+	if config.TLSCAFile != "" {
+		caCert, err := os.ReadFile(config.TLSCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	return tlsConfig, nil
+}
+
+// createSingleNodeClient creates a Redis client for single node deployment
+func createSingleNodeClient(config RedisCASConfig, tlsConfig *tls.Config) (*redis.Client, error) {
+	options := &redis.Options{
+		Addr:            config.Addrs[0], // Use first (and only) address
+		Username:        config.Username,
+		Password:        config.Password,
+		DB:              config.DB,
+		MaxRetries:      config.MaxRetries,
+		MinRetryBackoff: config.MinRetryBackoff,
+		MaxRetryBackoff: config.MaxRetryBackoff,
+		DialTimeout:     config.DialTimeout,
+		ReadTimeout:     config.ReadTimeout,
+		WriteTimeout:    config.WriteTimeout,
+		PoolSize:        config.PoolSize,
+		MinIdleConns:    config.MinIdleConns,
+		TLSConfig:       tlsConfig,
+	}
+
+	return redis.NewClient(options), nil
+}
+
+// createClusterClient creates a Redis client for cluster deployment
+func createClusterClient(config RedisCASConfig, tlsConfig *tls.Config) (*redis.ClusterClient, error) {
+	options := &redis.ClusterOptions{
+		Addrs:           config.Addrs, // Use all provided addresses
+		Username:        config.Username,
+		Password:        config.Password,
+		MaxRetries:      config.MaxRetries,
+		MinRetryBackoff: config.MinRetryBackoff,
+		MaxRetryBackoff: config.MaxRetryBackoff,
+		DialTimeout:     config.DialTimeout,
+		ReadTimeout:     config.ReadTimeout,
+		WriteTimeout:    config.WriteTimeout,
+		PoolSize:        config.PoolSize,
+		MinIdleConns:    config.MinIdleConns,
+		TLSConfig:       tlsConfig,
+	}
+
+	return redis.NewClusterClient(options), nil
+}
+
+// createSentinelClient creates a Redis client for sentinel deployment
+func createSentinelClient(config RedisCASConfig, tlsConfig *tls.Config) (*redis.Client, error) {
+	options := &redis.FailoverOptions{
+		MasterName:       config.MasterName,
+		SentinelAddrs:    config.Addrs, // Addresses are sentinel servers
+		SentinelUsername: config.SentinelUser,
+		SentinelPassword: config.SentinelPasswd,
+		Username:         config.Username,
+		Password:         config.Password,
+		DB:               config.DB,
+		MaxRetries:       config.MaxRetries,
+		MinRetryBackoff:  config.MinRetryBackoff,
+		MaxRetryBackoff:  config.MaxRetryBackoff,
+		DialTimeout:      config.DialTimeout,
+		ReadTimeout:      config.ReadTimeout,
+		WriteTimeout:     config.WriteTimeout,
+		PoolSize:         config.PoolSize,
+		MinIdleConns:     config.MinIdleConns,
+		TLSConfig:        tlsConfig,
+	}
+
+	return redis.NewFailoverClient(options), nil
+}
+
+// Convenience constructors for common configurations
+
+// NewSingleNodeRedisCASBroker creates a Redis CAS broker for single node deployment
+func NewSingleNodeRedisCASBroker(addr, password, nodeID string) (*RedisCASBroker, error) {
+	config := RedisCASConfig{
+		Addrs:    []string{addr},
+		Password: password,
+		NodeID:   nodeID,
+	}
+	return NewRedisCASBroker(config)
+}
+
+// NewClusterRedisCASBroker creates a Redis CAS broker for cluster deployment
+func NewClusterRedisCASBroker(addrs []string, password, nodeID string) (*RedisCASBroker, error) {
+	config := RedisCASConfig{
+		Addrs:    addrs,
+		Password: password,
+		NodeID:   nodeID,
+	}
+	return NewRedisCASBroker(config)
+}
+
+// NewSentinelRedisCASBroker creates a Redis CAS broker for sentinel deployment
+func NewSentinelRedisCASBroker(sentinelAddrs []string, masterName, password, nodeID string) (*RedisCASBroker, error) {
+	config := RedisCASConfig{
+		Addrs:      sentinelAddrs,
+		MasterName: masterName,
+		Password:   password,
+		NodeID:     nodeID,
+	}
+	return NewRedisCASBroker(config)
 }
 
 // loadCurrentState loads the current event state if it exists
