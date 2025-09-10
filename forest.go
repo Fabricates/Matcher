@@ -274,6 +274,17 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 func (rf *RuleForest) ensureDimensionsInOrder(dimensions []*DimensionValue) {
 	// If we don't have a dimension order yet, establish it from the first rule
 	if len(rf.DimensionOrder) == 0 {
+		sort.SliceStable(dimensions, func(i, j int) bool {
+			dim1, dim1ok := rf.DimensionConfigs[dimensions[i].DimensionName]
+			dim2, dim2ok := rf.DimensionConfigs[dimensions[j].DimensionName]
+			if dim1ok && !dim2ok {
+				return true
+			}
+			if dim1ok && dim2ok {
+				return dim1.Index < dim2.Index
+			}
+			return false
+		})
 		for _, dim := range dimensions {
 			rf.DimensionOrder = append(rf.DimensionOrder, dim.DimensionName)
 		}
@@ -363,7 +374,9 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 			// For non-equal match types or when we don't have the first dimension value,
 			// iterate through all trees (no optimization possible)
 			for _, tree := range trees {
-				rf.searchTree(tree, query, 0, &candidateRules, dimensionConfigs)
+				if rf.matchesValue(firstDimValue, tree.Value, matchType) {
+					rf.searchTree(tree, query, 0, &candidateRules, dimensionConfigs)
+				}
 			}
 		}
 	}
