@@ -155,19 +155,17 @@ func (rf *RuleForest) SetDimensionOrder(order []string) {
 }
 
 // AddRule adds a rule to the forest following the dimension order
-func (rf *RuleForest) AddRule(rule *Rule) {
+func (rf *RuleForest) AddRule(rule *Rule) *Rule {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	if len(rule.Dimensions) == 0 {
-		return
+		return nil
 	}
 
 	// Validate that rule has dimensions and auto-expand dimension order
-	if len(rf.DimensionOrder) == 0 || len(rule.Dimensions) != len(rf.DimensionOrder) {
-		// Auto-expand dimension order if dimensions are encountered
-		rf.ensureDimensionsInOrder(rule.Dimensions)
-	}
+	// Auto-expand dimension order if dimensions are encountered
+	rf.ensureDimensionsInOrder()
 
 	// Auto-fill missing dimensions with MatchTypeAny if dimension order is established
 	completeRule := rule.Clone()
@@ -196,7 +194,7 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 	sortedDims := completeRule.Dimensions
 
 	if len(sortedDims) == 0 {
-		return
+		return nil
 	}
 
 	// Get the first dimension to determine which tree to use
@@ -267,16 +265,24 @@ func (rf *RuleForest) AddRule(rule *Rule) {
 
 	// Index the rule for quick removal
 	rf.RuleIndex[completeRule.ID] = ruleNodes
+
+	return completeRule
 }
 
 // ensureDimensionsInOrder ensures all rule dimensions are in the dimension order
 // Auto-expands the dimension order to include dimensions from rules
-func (rf *RuleForest) ensureDimensionsInOrder(dimensions []*DimensionValue) {
+func (rf *RuleForest) ensureDimensionsInOrder() {
 	// If we don't have a dimension order yet, establish it from the first rule
-	if len(rf.DimensionOrder) == 0 {
-		sort.SliceStable(dimensions, func(i, j int) bool {
-			dim1, dim1ok := rf.DimensionConfigs[dimensions[i].DimensionName]
-			dim2, dim2ok := rf.DimensionConfigs[dimensions[j].DimensionName]
+	if len(rf.DimensionOrder) == 0 || len(rf.DimensionOrder) != len(rf.DimensionConfigs) {
+		var dims = make([]*DimensionConfig, len(rf.DimensionConfigs))
+		var i = 0
+		for _, d := range rf.DimensionConfigs {
+			dims[i] = d
+			i++
+		}
+		sort.SliceStable(dims, func(i, j int) bool {
+			dim1, dim1ok := rf.DimensionConfigs[dims[i].Name]
+			dim2, dim2ok := rf.DimensionConfigs[dims[j].Name]
 			if dim1ok && !dim2ok {
 				return true
 			}
@@ -285,24 +291,10 @@ func (rf *RuleForest) ensureDimensionsInOrder(dimensions []*DimensionValue) {
 			}
 			return false
 		})
-		for _, dim := range dimensions {
-			rf.DimensionOrder = append(rf.DimensionOrder, dim.DimensionName)
+		for _, dim := range dims {
+			rf.DimensionOrder = append(rf.DimensionOrder, dim.Name)
 		}
 		return
-	}
-
-	// Add any dimensions to the order
-	for _, dim := range dimensions {
-		found := false
-		for _, existingDim := range rf.DimensionOrder {
-			if existingDim == dim.DimensionName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			rf.DimensionOrder = append(rf.DimensionOrder, dim.DimensionName)
-		}
 	}
 }
 
@@ -802,9 +794,7 @@ func (rf *RuleForest) ReplaceRule(oldRule, newRule *Rule) {
 
 	// Step 3: Add new rule using standard logic
 	if newRule != nil && len(newRule.Dimensions) > 0 {
-		if len(rf.DimensionOrder) == 0 || len(newRule.Dimensions) != len(rf.DimensionOrder) {
-			rf.ensureDimensionsInOrder(newRule.Dimensions)
-		}
+		rf.ensureDimensionsInOrder()
 
 		sortedDims := rf.sortDimensionsByOrder(newRule.Dimensions)
 		if len(sortedDims) > 0 {

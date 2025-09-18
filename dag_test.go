@@ -6,7 +6,14 @@ import (
 )
 
 func TestDAGStructureWithSharedNodes(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs for the test
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
+	}
+
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create rules that will demonstrate DAG-like sharing
 	// These rules share some dimensions but have different match types
@@ -145,7 +152,13 @@ func TestDAGStructureWithSharedNodes(t *testing.T) {
 }
 
 func TestDAGStatistics(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs for the test
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"tool":    NewDimensionConfig("tool", 1, false),
+	}
+
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create rules that demonstrate node sharing in DAG structure
 	for i := 0; i < 10; i++ {

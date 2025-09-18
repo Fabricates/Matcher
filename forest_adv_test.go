@@ -8,8 +8,8 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 	// Define dimension order
 	dimensionConfigs := map[string]*DimensionConfig{
 		"product": NewDimensionConfig("product", 0, false),
-		"region":  NewDimensionConfig("region", 1, false),
-		"env":     NewDimensionConfig("env", 2, false),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -119,11 +119,11 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 }
 
 func TestRuleForestDimensionTraversal(t *testing.T) {
-	// Test that the forest properly traverses dimensions level by level
+	// Define dimension order
 	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, false),
-		"region":  NewDimensionConfig("region", 1, false),
-		"env":     NewDimensionConfig("env", 2, false),
+		"A": NewDimensionConfig("A", 0, false),
+		"B": NewDimensionConfig("B", 1, false),
+		"C": NewDimensionConfig("C", 2, false),
 	}
 	forest := CreateRuleForest(dimensionConfigs)
 
