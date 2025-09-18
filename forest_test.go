@@ -5,7 +5,14 @@ import (
 )
 
 func TestForestStructure(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs for the test
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region":  NewDimensionConfig("region", 0, false),
+		"env":     NewDimensionConfig("env", 1, false),
+		"service": NewDimensionConfig("service", 2, false),
+	}
+
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules with different primary dimensions
 	rule1 := &Rule{
@@ -87,7 +94,13 @@ func TestForestStructure(t *testing.T) {
 }
 
 func TestForestNodeSearch(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs for the test
+	dimensionConfigs := map[string]*DimensionConfig{
+		"service": NewDimensionConfig("service", 0, false),
+		"version": NewDimensionConfig("version", 1, false),
+	}
+
+	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create a rule with prefix matching
 	rule := &Rule{
@@ -131,7 +144,12 @@ func TestForestNodeSearch(t *testing.T) {
 }
 
 func TestForestRemoveRule(t *testing.T) {
-	forest := CreateForestIndex()
+	// Set up dimension configs for the test
+	dimensionConfigs := map[string]*DimensionConfig{
+		"region": NewDimensionConfig("region", 0, false),
+	}
+
+	forest := CreateRuleForest(dimensionConfigs)
 
 	rule := &Rule{
 		ID: "test-rule",

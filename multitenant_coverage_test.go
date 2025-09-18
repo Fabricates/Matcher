@@ -131,6 +131,13 @@ func TestSetAllowDuplicateWeights(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add dimension config first
+	dimConfig := NewDimensionConfig("product", 0, true)
+	err = engine.AddDimension(dimConfig)
+	if err != nil {
+		t.Fatalf("Failed to add dimension config: %v", err)
+	}
+
 	// Test SetAllowDuplicateWeights
 	engine.SetAllowDuplicateWeights(true)
 

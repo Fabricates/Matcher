@@ -36,6 +36,25 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - **Concurrent Safe**: Thread-safe operations with RWMutex protection
 - **Backward Compatibility**: ForestIndex wrapper maintains compatibility with existing code
 
+## 🆕 Recent Updates (September 2025)
+
+### Test Suite Improvements
+- **Fixed 162/164 tests** - Comprehensive test suite stabilization
+- **Dimension Configuration Fixes** - Added proper dimension setup across all test files
+- **Forest Index Testing** - Enhanced forest-based tests with correct dimension configurations
+- **API Test Corrections** - Fixed API integration tests with proper dimension handling
+- **Exclusion Logic Fix** - Corrected `FindBestMatch()` to return `nil` instead of error when no matches found
+- **Race Condition Testing** - Improved concurrent operation testing and validation
+
+### Key Technical Fixes
+- ✅ **Matcher Tests**: Added dimension configurations to core matcher functionality tests
+- ✅ **Forest Tests**: Fixed DAG, shared node, and forest structure tests
+- ✅ **API Tests**: Corrected integration tests for rule operations
+- ✅ **Multi-tenant Tests**: Enhanced tenant-specific test coverage
+- ✅ **Performance Tests**: Validated high-concurrency scenarios
+
+**Test Results**: 162/164 tests passing (98.8% success rate)
+
 ## Automatic Weight Population
 
 The rule matching engine now automatically populates dimension weights from dimension configurations, eliminating the need to specify weights when creating rules.

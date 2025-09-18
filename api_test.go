@@ -411,6 +411,12 @@ func TestAPIDeleteRule(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add dimension config first
+	config := NewDimensionConfig("region", 0, false)
+	if err := engine.AddDimension(config); err != nil {
+		t.Fatalf("Failed to add dimension config: %v", err)
+	}
+
 	// Add a rule first
 	rule := NewRule("api-delete-test").
 		Dimension("region", "us-west", MatchTypeEqual).
@@ -457,6 +463,12 @@ func TestAPIFindBestMatch(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	// Add dimension config first
+	config := NewDimensionConfig("region", 0, false)
+	if err := engine.AddDimension(config); err != nil {
+		t.Fatalf("Failed to add dimension config: %v", err)
+	}
 
 	// Add a rule
 	rule := NewRule("best-match-test").

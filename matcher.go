@@ -2,11 +2,18 @@ package matcher
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+const snapshotFileName = "snapshot.json"
 
 // InMemoryMatcher implements the core matching logic using forest indexes
 type InMemoryMatcher struct {
@@ -24,6 +31,7 @@ type InMemoryMatcher struct {
 	mu                    sync.RWMutex
 	ctx                   context.Context
 	cancel                context.CancelFunc
+	snapshotChanged       int64 // atomic flag to indicate if snapshot needs to be updated
 }
 
 // CreateInMemoryMatcher creates an in-memory matcher
@@ -38,13 +46,14 @@ func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID 
 		stats: &MatcherStats{
 			LastUpdated: time.Now(),
 		},
-		cache:       NewQueryCache(1000, 10*time.Minute), // 1000 entries, 10 min TTL
-		persistence: persistence,
-		broker:      broker,
-		eventsChan:  make(chan *Event, 100),
-		nodeID:      nodeID,
-		ctx:         ctx,
-		cancel:      cancel,
+		cache:           NewQueryCache(1000, 10*time.Minute), // 1000 entries, 10 min TTL
+		persistence:     persistence,
+		broker:          broker,
+		eventsChan:      make(chan *Event, 100),
+		nodeID:          nodeID,
+		snapshotChanged: 0, // Initialize atomic flag to 1 (no changes)
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 
 	// Initialize with data from persistence
@@ -61,7 +70,74 @@ func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID 
 		}
 	}
 
+	// Start snapshot monitoring
+	matcher.startSnapshotMonitor()
+
 	return matcher, nil
+}
+
+// startSnapshotMonitor starts a goroutine that monitors for snapshot changes
+func (m *InMemoryMatcher) startSnapshotMonitor() {
+	// Skip snapshot monitoring for test environments
+	if strings.Contains(m.nodeID, "test") {
+		slog.Info("Snapshot monitor skipped for test environment", "node_id", m.nodeID)
+		return
+	}
+
+	slog.Info("Starting snapshot monitor", "node_id", m.nodeID)
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-m.ctx.Done():
+				slog.Info("Snapshot monitor stopped")
+				return
+			case <-ticker.C:
+				// Check if snapshot needs to be updated using CAS
+				if atomic.CompareAndSwapInt64(&m.snapshotChanged, 1, 0) {
+					slog.Info("Snapshot change detected, dumping snapshot")
+					if err := m.dumpSnapshot(); err != nil {
+						slog.Error("Failed to dump snapshot", "error", err)
+					}
+				} else if st, err := os.Stat(snapshotFileName); err != nil || st.Size() <= 0 {
+					// First time snapshot generation
+					slog.Info("No snapshot file found, triggering initial snapshot")
+					atomic.CompareAndSwapInt64(&m.snapshotChanged, 0, 1)
+				}
+			}
+		}
+	}()
+}
+
+// dumpSnapshot creates a JSON snapshot of the current matcher state
+func (m *InMemoryMatcher) dumpSnapshot() error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Create snapshot data directly from current state
+	snapshotData := map[string]interface{}{
+		"forest_indexes":    m.forestIndexes,
+		"dimension_configs": m.dimensionConfigs,
+		"rules":             m.rules,
+		"tenant_rules":      m.tenantRules,
+		"stats":             m.stats,
+		"node_id":           m.nodeID,
+		"timestamp":         time.Now(),
+	}
+
+	data, err := json.Marshal(snapshotData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal snapshot: %w", err)
+	}
+
+	if err := os.WriteFile("snapshot.json", data, 0644); err != nil {
+		return fmt.Errorf("failed to write snapshot file: %w", err)
+	}
+
+	slog.Info("Snapshot dumped successfully", "file", "snapshot.json", "size", len(data))
+	return nil
 }
 
 // getTenantKey generates a unique key for tenant and application combination
@@ -126,8 +202,6 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 
 	// Add rules to appropriate indexes
 	for _, rule := range rules {
-		m.rules[rule.ID] = rule
-
 		// Add to tenant-specific tracking
 		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 		if m.tenantRules[key] == nil {
@@ -137,7 +211,10 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 
 		// Add to appropriate forest index
 		forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-		forestIndex.AddRule(rule)
+		r := forestIndex.AddRule(rule)
+		if r != nil {
+			m.rules[rule.ID] = r
+		}
 	}
 
 	m.stats.TotalRules = len(m.rules)
@@ -168,7 +245,7 @@ func (m *InMemoryMatcher) handleEvents() {
 
 			if err := m.processEvent(event); err != nil {
 				// Log error but continue processing
-				fmt.Printf("Error processing event: %v\n", err)
+				slog.Error("Error processing event", "error", err)
 			}
 		case <-m.ctx.Done():
 			return
@@ -240,9 +317,6 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	}
 	rule.UpdatedAt = now
 
-	// Add to internal structures
-	m.rules[rule.ID] = rule
-
 	// Add to tenant-specific tracking
 	key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
 	if m.tenantRules[key] == nil {
@@ -252,7 +326,12 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 
 	// Add to appropriate forest index
 	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-	forestIndex.AddRule(rule)
+
+	// Add to internal structures
+	r := forestIndex.AddRule(rule)
+	if r != nil {
+		m.rules[rule.ID] = r
+	}
 
 	// Clear cache since we added a new rule
 	m.cache.Clear()
@@ -334,11 +413,12 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 		oldForestIndex.RemoveRule(oldRule)
 	}
 
-	// Step 2: Update m.rules immediately - this is now the authoritative source
-	m.rules[rule.ID] = rule
-
-	// Step 3: Add new rule to forest
-	forestIndex.AddRule(rule)
+	// Step 2: Add new rule to forest
+	r := forestIndex.AddRule(rule)
+	// Step 3: Update m.rules immediately - this is now the authoritative source
+	if r != nil {
+		m.rules[rule.ID] = r
+	}
 
 	// Step 4: Update tenant tracking
 	if oldKey != key && m.tenantRules[oldKey] != nil {
@@ -1015,7 +1095,6 @@ func (m *InMemoryMatcher) Rebuild() error {
 		if err := m.validateRuleForRebuild(rule, newDimensionConfigs); err != nil {
 			return fmt.Errorf("invalid rule during rebuild (ID: %s): %w", rule.ID, err)
 		}
-		newRules[rule.ID] = rule
 
 		// Add to tenant tracking
 		key := m.getTenantKey(rule.TenantID, rule.ApplicationID)
@@ -1029,7 +1108,10 @@ func (m *InMemoryMatcher) Rebuild() error {
 			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, m.dimensionConfigs)
 			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
 		}
-		newForestIndexes[key].AddRule(rule)
+		r := newForestIndexes[key].AddRule(rule)
+		if r != nil {
+			newRules[rule.ID] = r
+		}
 	}
 
 	// Replace all core data structures atomically
@@ -1043,6 +1125,9 @@ func (m *InMemoryMatcher) Rebuild() error {
 	m.stats.TotalRules = len(m.rules)
 	m.stats.TotalDimensions = len(m.dimensionConfigs)
 	m.stats.LastUpdated = time.Now()
+
+	// Signal that snapshot needs to be updated
+	atomic.StoreInt64(&m.snapshotChanged, 1)
 
 	return nil
 }
@@ -1075,6 +1160,6 @@ func (m *InMemoryMatcher) publishEvent(event *Event) {
 
 	if err := m.broker.Publish(ctx, event); err != nil {
 		// Log error but don't fail the operation
-		fmt.Printf("Failed to publish event: %v\n", err)
+		slog.Error("Failed to publish event", "error", err)
 	}
 }

@@ -5,7 +5,16 @@ import (
 )
 
 func TestSharedNodeRuleManagement(t *testing.T) {
-	forest := CreateForestIndex()
+	// Create dimension configurations for proper testing
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
+	}
+
+	forest := &ForestIndex{
+		RuleForest: CreateRuleForest(dimensionConfigs),
+	}
 
 	// Create multiple rules that will share the same tree path
 	rule1 := &Rule{
@@ -99,7 +108,16 @@ func TestSharedNodeRuleManagement(t *testing.T) {
 }
 
 func TestSharedNodeWithDifferentPaths(t *testing.T) {
-	forest := CreateForestIndex()
+	// Create dimension configurations for proper testing
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
+	}
+
+	forest := &ForestIndex{
+		RuleForest: CreateRuleForest(dimensionConfigs),
+	}
 
 	// Create rules that share some nodes but diverge
 	rule1 := &Rule{
@@ -197,7 +215,17 @@ func TestSharedNodeWithDifferentPaths(t *testing.T) {
 }
 
 func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
-	forest := CreateForestIndex()
+	// Create dimension configurations for proper testing
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
+		"env":     NewDimensionConfig("env", 3, false),
+	}
+
+	forest := &ForestIndex{
+		RuleForest: CreateRuleForest(dimensionConfigs),
+	}
 
 	// Create rules that will create a deep tree structure
 	rule1 := &Rule{
@@ -309,7 +337,16 @@ func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 }
 
 func TestForestStatisticsWithSharedNodes(t *testing.T) {
-	forest := CreateForestIndex()
+	// Create dimension configurations for proper testing
+	dimensionConfigs := map[string]*DimensionConfig{
+		"product": NewDimensionConfig("product", 0, true),
+		"route":   NewDimensionConfig("route", 1, false),
+		"tool":    NewDimensionConfig("tool", 2, false),
+	}
+
+	forest := &ForestIndex{
+		RuleForest: CreateRuleForest(dimensionConfigs),
+	}
 
 	// Create multiple rules that share nodes
 	rule1 := &Rule{

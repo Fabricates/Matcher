@@ -83,6 +83,11 @@ func TestPrefixMatching(t *testing.T) {
 	}
 	defer engine.Close()
 
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
 	// Add prefix rule
 	rule := NewRule("prefix_rule").
 		Dimension("product", "Test", MatchTypePrefix).
@@ -121,6 +126,11 @@ func TestSuffixMatching(t *testing.T) {
 	}
 	defer engine.Close()
 
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
 	// Add suffix rule
 	rule := NewRule("suffix_rule").
 		Dimension("product", "Product", MatchTypeSuffix).
@@ -158,6 +168,11 @@ func TestAnyMatching(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
 
 	// Add any rule (fallback)
 	rule := NewRule("any_rule").
@@ -200,6 +215,11 @@ func TestWeightPriority(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
 
 	// Add high weight rule
 	highRule := NewRule("high_weight").
@@ -249,6 +269,11 @@ func TestManualWeightOverride(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
 
 	// Add rule with high calculated weight
 	highCalcRule := NewRule("high_calc").
@@ -303,6 +328,8 @@ func TestCaching(t *testing.T) {
 	}
 	defer engine.Close()
 
+	addTestDimensions(engine)
+
 	// Add test rule
 	rule := NewRule("cache_test").
 		Dimension("product", "CacheTest", MatchTypeEqual).
@@ -353,6 +380,11 @@ func TestPerformance(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
 
 	// Allow duplicate weights for performance testing to avoid weight conflicts
 	engine.allowDuplicateWeights = true
@@ -465,6 +497,11 @@ func TestEventSubscription(t *testing.T) {
 	}
 	defer engine.Close()
 	defer eventSub.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
 
 	// Publish a rule addition event
 	rule := NewRule("event_rule").
