@@ -37,7 +37,17 @@ type InMemoryMatcher struct {
 // CreateInMemoryMatcher creates an in-memory matcher
 func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
 	ctx, cancel := context.WithCancel(context.Background())
+	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID)
+}
 
+// NewInMemoryMatcherWithContext creates an in-memory matcher with a custom context for timeout handling
+func NewInMemoryMatcherWithContext(ctx context.Context, persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID)
+}
+
+// newInMemoryMatcherWithContext is a private helper that creates an in-memory matcher with the provided context
+func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFunc, persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
 	matcher := &InMemoryMatcher{
 		forestIndexes:    make(map[string]*ForestIndex),
 		dimensionConfigs: make(map[string]*DimensionConfig),
@@ -57,7 +67,7 @@ func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID 
 	}
 
 	// Initialize with data from persistence
-	if err := matcher.loadFromPersistence(); err != nil {
+	if err := matcher.loadFromPersistence(ctx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to load data from persistence: %w", err)
 	}
@@ -176,12 +186,12 @@ func (m *InMemoryMatcher) getForestIndex(tenantID, applicationID string) *Forest
 }
 
 // loadFromPersistence loads rules and dimensions from persistence layer
-func (m *InMemoryMatcher) loadFromPersistence() error {
+func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Load dimension configurations
-	configs, err := m.persistence.LoadDimensionConfigs(m.ctx)
+	configs, err := m.persistence.LoadDimensionConfigs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load dimension configs: %w", err)
 	}
@@ -195,7 +205,7 @@ func (m *InMemoryMatcher) loadFromPersistence() error {
 	}
 
 	// Load rules
-	rules, err := m.persistence.LoadRules(m.ctx)
+	rules, err := m.persistence.LoadRules(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load rules: %w", err)
 	}

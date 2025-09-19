@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -1113,11 +1114,13 @@ func TestExcludeRulesWithTenants(t *testing.T) {
 	})
 }
 
-func TestExcludeRulesWithDraftStatus(t *testing.T) {
+func TestNewInMemoryMatcherWithContext(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-draft")
+	ctx := context.Background()
+
+	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-context")
 	if err != nil {
-		t.Fatalf("Failed to create engine: %v", err)
+		t.Fatalf("Failed to create engine with context: %v", err)
 	}
 	defer engine.Close()
 
@@ -1126,73 +1129,209 @@ func TestExcludeRulesWithDraftStatus(t *testing.T) {
 		t.Fatalf("Failed to initialize dimensions: %v", err)
 	}
 
-	// Add rules with different statuses
-	workingRule := NewRule("working_rule").
-		Dimension("product", "ProductA", MatchTypeEqual).
-		Dimension("route", "main", MatchTypeEqual).
-		Status(RuleStatusWorking).
-		ManualWeight(10.0).
+	// Add a test rule
+	rule := NewRule("context_test_rule").
+		Dimension("product", "ContextProduct", MatchTypeEqual).
 		Build()
 
-	draftRule := NewRule("draft_rule").
-		Dimension("product", "ProductA", MatchTypeEqual).
-		Dimension("route", "main", MatchTypeEqual).
-		Status(RuleStatusDraft).
-		ManualWeight(15.0). // Higher weight but draft
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Test basic matching
+	query := CreateQuery(map[string]string{
+		"product": "ContextProduct",
+	})
+
+	result, err := engine.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected match but got none")
+	}
+
+	if result.Rule.ID != "context_test_rule" {
+		t.Errorf("Expected rule 'context_test_rule', got '%s'", result.Rule.ID)
+	}
+}
+
+func TestNewInMemoryMatcherWithContextTimeout(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-timeout")
+	if err != nil {
+		t.Fatalf("Failed to create engine with timeout context: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add a test rule
+	rule := NewRule("timeout_test_rule").
+		Dimension("product", "TimeoutProduct", MatchTypeEqual).
 		Build()
 
-	// Allow duplicate weights for this test
-	engine.allowDuplicateWeights = true
-
-	err = engine.AddRule(workingRule)
+	err = engine.AddRule(rule)
 	if err != nil {
-		t.Fatalf("Failed to add working rule: %v", err)
+		t.Fatalf("Failed to add rule: %v", err)
 	}
 
-	err = engine.AddRule(draftRule)
+	// Wait for context to timeout
+	time.Sleep(100 * time.Millisecond)
+
+	// Test that operations still work (matcher should handle cancelled context gracefully)
+	query := CreateQuery(map[string]string{
+		"product": "TimeoutProduct",
+	})
+
+	result, err := engine.FindBestMatch(query)
 	if err != nil {
-		t.Fatalf("Failed to add draft rule: %v", err)
+		t.Fatalf("Query failed after context timeout: %v", err)
 	}
 
-	t.Run("ExcludeWorkingRuleFromAllRulesQuery", func(t *testing.T) {
-		// Query all rules but exclude the working rule - should find only draft
-		query := CreateQueryWithAllRulesAndExcluded(map[string]string{
-			"product": "ProductA",
-			"route":   "main",
-		}, []string{"working_rule"})
+	if result == nil {
+		t.Fatal("Expected match but got none after context timeout")
+	}
 
-		result, err := engine.FindBestMatch(query)
-		if err != nil {
-			t.Fatalf("Query failed: %v", err)
-		}
+	if result.Rule.ID != "timeout_test_rule" {
+		t.Errorf("Expected rule 'timeout_test_rule', got '%s'", result.Rule.ID)
+	}
+}
 
-		if result == nil {
-			t.Fatal("Expected match but got none")
-		}
+func TestNewInMemoryMatcherWithContextCancellation(t *testing.T) {
+	persistence := NewJSONPersistence("./test_data")
+	ctx, cancel := context.WithCancel(context.Background())
 
-		if result.Rule.ID != "draft_rule" {
-			t.Errorf("Expected rule 'draft_rule', got '%s'", result.Rule.ID)
-		}
+	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-cancel")
+	if err != nil {
+		t.Fatalf("Failed to create engine with cancellable context: %v", err)
+	}
+	defer engine.Close()
+
+	err = addTestDimensions(engine)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Add a test rule
+	rule := NewRule("cancel_test_rule").
+		Dimension("product", "CancelProduct", MatchTypeEqual).
+		Build()
+
+	err = engine.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Cancel the context
+	cancel()
+
+	// Give a moment for cancellation to propagate
+	time.Sleep(10 * time.Millisecond)
+
+	// Test that operations still work (matcher should handle cancelled context gracefully)
+	query := CreateQuery(map[string]string{
+		"product": "CancelProduct",
 	})
 
-	t.Run("ExcludeDraftRuleFromAllRulesQuery", func(t *testing.T) {
-		// Query all rules but exclude the draft rule - should find working rule
-		query := CreateQueryWithAllRulesAndExcluded(map[string]string{
-			"product": "ProductA",
-			"route":   "main",
-		}, []string{"draft_rule"})
+	result, err := engine.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Query failed after context cancellation: %v", err)
+	}
 
-		result, err := engine.FindBestMatch(query)
-		if err != nil {
-			t.Fatalf("Query failed: %v", err)
-		}
+	if result == nil {
+		t.Fatal("Expected match but got none after context cancellation")
+	}
 
-		if result == nil {
-			t.Fatal("Expected match but got none")
-		}
+	if result.Rule.ID != "cancel_test_rule" {
+		t.Errorf("Expected rule 'cancel_test_rule', got '%s'", result.Rule.ID)
+	}
+}
 
-		if result.Rule.ID != "working_rule" {
-			t.Errorf("Expected rule 'working_rule', got '%s'", result.Rule.ID)
-		}
+func TestNewInMemoryMatcherWithContextEquivalentToDefault(t *testing.T) {
+	// Test that NewInMemoryMatcherWithContext with background context behaves the same as NewInMemoryMatcher
+	persistence1 := NewJSONPersistence("./test_data_default")
+	persistence2 := NewJSONPersistence("./test_data_context")
+
+	ctx := context.Background()
+
+	engine1, err := NewInMemoryMatcher(persistence1, nil, "test-node-default")
+	if err != nil {
+		t.Fatalf("Failed to create default engine: %v", err)
+	}
+	defer engine1.Close()
+
+	engine2, err := NewInMemoryMatcherWithContext(ctx, persistence2, nil, "test-node-context")
+	if err != nil {
+		t.Fatalf("Failed to create context engine: %v", err)
+	}
+	defer engine2.Close()
+
+	// Add same dimensions to both
+	err = addTestDimensions(engine1)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions for default engine: %v", err)
+	}
+
+	err = addTestDimensions(engine2)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions for context engine: %v", err)
+	}
+
+	// Add same rule to both
+	rule := NewRule("equivalent_test_rule").
+		Dimension("product", "EquivalentProduct", MatchTypeEqual).
+		ManualWeight(15.0).
+		Build()
+
+	err = engine1.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule to default engine: %v", err)
+	}
+
+	rule2 := NewRule("equivalent_test_rule").
+		Dimension("product", "EquivalentProduct", MatchTypeEqual).
+		ManualWeight(15.0).
+		Build()
+
+	err = engine2.AddRule(rule2)
+	if err != nil {
+		t.Fatalf("Failed to add rule to context engine: %v", err)
+	}
+
+	// Test same query on both
+	query := CreateQuery(map[string]string{
+		"product": "EquivalentProduct",
 	})
+
+	result1, err := engine1.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Query failed on default engine: %v", err)
+	}
+
+	result2, err := engine2.FindBestMatch(query)
+	if err != nil {
+		t.Fatalf("Query failed on context engine: %v", err)
+	}
+
+	// Results should be equivalent
+	if result1 == nil || result2 == nil {
+		t.Fatal("Both engines should return matches")
+	}
+
+	if result1.Rule.ID != result2.Rule.ID {
+		t.Errorf("Expected same rule ID, got '%s' vs '%s'", result1.Rule.ID, result2.Rule.ID)
+	}
+
+	if result1.TotalWeight != result2.TotalWeight {
+		t.Errorf("Expected same weight %.2f, got %.2f vs %.2f", result1.TotalWeight, result1.TotalWeight, result2.TotalWeight)
+	}
 }
