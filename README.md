@@ -45,6 +45,7 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - **API Test Corrections** - Fixed API integration tests with proper dimension handling
 - **Exclusion Logic Fix** - Corrected `FindBestMatch()` to return `nil` instead of error when no matches found
 - **Race Condition Testing** - Improved concurrent operation testing and validation
+- **Weight Conflict Status Testing** - Added comprehensive tests for status-based weight uniqueness
 
 ### Key Technical Fixes
 - ✅ **Matcher Tests**: Added dimension configurations to core matcher functionality tests
@@ -52,6 +53,13 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - ✅ **API Tests**: Corrected integration tests for rule operations
 - ✅ **Multi-tenant Tests**: Enhanced tenant-specific test coverage
 - ✅ **Performance Tests**: Validated high-concurrency scenarios
+- ✅ **Weight Conflict Tests**: Verified status-based uniqueness for weight conflicts
+
+### Weight Conflict Status-Based Logic
+- **Status Uniqueness**: Rules with same weight can coexist if they have different statuses
+- **Same-Status Conflicts**: Rules with same weight and same status conflict if they intersect
+- **Multi-Status Support**: Supports both `RuleStatusWorking` and `RuleStatusDraft`
+- **Comprehensive Testing**: Added 4 test scenarios covering all status-based conflict scenarios
 
 **Test Results**: 162/164 tests passing (98.8% success rate)
 

@@ -862,6 +862,10 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 	var conflictingRules []*Rule
 	forestIndex.searchConflict(rule, &conflictingRules)
 
+	statusUnique := map[RuleStatus]bool{
+		rule.Status: true,
+	}
+
 	// Check if any of the potentially conflicting rules have the same weight
 	for _, conflictingRule := range conflictingRules {
 		// Skip if it's the same rule (for updates)
@@ -869,11 +873,13 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 			continue
 		}
 
+		// Allow single existence for different status
 		conflictingWeight := conflictingRule.CalculateTotalWeight(m.dimensionConfigs)
-		if conflictingWeight == newRuleWeight {
+		if _, ok := statusUnique[conflictingRule.Status]; conflictingWeight == newRuleWeight && ok {
 			return fmt.Errorf("invalid rule: weight conflict: new rule '%s' has weight %.2f which conflicts with existing rule '%s' in tenant '%s' application '%s'",
 				rule.ID, newRuleWeight, conflictingRule.ID, rule.TenantID, rule.ApplicationID)
 		}
+		statusUnique[conflictingRule.Status] = true
 	}
 
 	return nil
