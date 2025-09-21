@@ -73,7 +73,7 @@ func TestZeroWeightWhenNoDimensionConfig(t *testing.T) {
 	// Add the rule - weights should default to 0.0
 	err = engine.AddRule(rule)
 	if err == nil {
-		t.Fatalf("Dimension is required before adding any new rules: %v", err)
+		t.Fatalf("Dimension is required before adding any new rules")
 	}
 }
 
