@@ -890,7 +890,7 @@ func (rf *RuleForest) GetStats() map[string]interface{} {
 	for _, trees := range rf.Trees {
 		totalTrees += len(trees)
 	}
-	// Cxclude one empty tree node in trees
+	// Exclude one empty tree node in trees
 	totalTrees += len(rf.EqualTreesIndex) - 1
 
 	levelCounts := make(map[int]int)
