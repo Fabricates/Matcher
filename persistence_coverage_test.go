@@ -75,7 +75,7 @@ func TestPersistenceErrorCases(t *testing.T) {
 
 	// Test SaveRules error case
 	rules := []*Rule{
-		{ID: "test", Dimensions: []*DimensionValue{}},
+		{ID: "test", Dimensions: map[string]*DimensionValue{}},
 	}
 	err = persistence.SaveRules(ctx, rules)
 	if err == nil {
@@ -178,19 +178,19 @@ func TestKafkaEventSubscriberCoverage(t *testing.T) {
 
 func TestForestCandidateRulesWithRule(t *testing.T) {
 	// Create forest with dimension configs
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+	}, nil)
 
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Add a test rule
 	rule := &Rule{
 		ID: "test-rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "TestProduct", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "TestRoute", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "TestProduct", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "TestRoute", MatchType: MatchTypeEqual},
 		},
 	}
 
@@ -198,9 +198,9 @@ func TestForestCandidateRulesWithRule(t *testing.T) {
 
 	// Test FindCandidateRules with a query rule that should match
 	queryRule := &Rule{
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "TestProduct", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "TestRoute", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "TestProduct", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "TestRoute", MatchType: MatchTypeEqual},
 		},
 	}
 

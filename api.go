@@ -50,7 +50,7 @@ func NewRule(id string) *RuleBuilder {
 	return &RuleBuilder{
 		rule: &Rule{
 			ID:         id,
-			Dimensions: make([]*DimensionValue, 0),
+			Dimensions: make(map[string]*DimensionValue),
 			Metadata:   make(map[string]string),
 		},
 	}
@@ -63,7 +63,7 @@ func NewRuleWithTenant(id, tenantID, applicationID string) *RuleBuilder {
 			ID:            id,
 			TenantID:      tenantID,
 			ApplicationID: applicationID,
-			Dimensions:    make([]*DimensionValue, 0),
+			Dimensions:    make(map[string]*DimensionValue),
 			Metadata:      make(map[string]string),
 		},
 	}
@@ -89,7 +89,10 @@ func (rb *RuleBuilder) Dimension(name, value string, matchType MatchType) *RuleB
 		Value:         value,
 		MatchType:     matchType,
 	}
-	rb.rule.Dimensions = append(rb.rule.Dimensions, dimValue)
+	if rb.rule.Dimensions == nil {
+		rb.rule.Dimensions = make(map[string]*DimensionValue)
+	}
+	rb.rule.Dimensions[name] = dimValue
 	return rb
 }
 
@@ -364,7 +367,7 @@ func CreateQueryWithAllRulesAndTenant(tenantID, applicationID string, values map
 
 // CreateQueryWithDynamicConfigs creates a query with custom dimension configurations
 // This allows for dynamic weight adjustment per query without modifying the global configs
-func CreateQueryWithDynamicConfigs(values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+func CreateQueryWithDynamicConfigs(values map[string]string, dynamicConfigs *DimensionConfigs) *QueryRule {
 	return &QueryRule{
 		Values:                  values,
 		IncludeAllRules:         false,
@@ -373,7 +376,7 @@ func CreateQueryWithDynamicConfigs(values map[string]string, dynamicConfigs map[
 }
 
 // CreateQueryWithTenantAndDynamicConfigs creates a tenant-scoped query with custom dimension configurations
-func CreateQueryWithTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+func CreateQueryWithTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs *DimensionConfigs) *QueryRule {
 	return &QueryRule{
 		TenantID:                tenantID,
 		ApplicationID:           applicationID,
@@ -384,7 +387,7 @@ func CreateQueryWithTenantAndDynamicConfigs(tenantID, applicationID string, valu
 }
 
 // CreateQueryWithAllRulesAndDynamicConfigs creates a query that includes all rules and uses custom dimension configurations
-func CreateQueryWithAllRulesAndDynamicConfigs(values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+func CreateQueryWithAllRulesAndDynamicConfigs(values map[string]string, dynamicConfigs *DimensionConfigs) *QueryRule {
 	return &QueryRule{
 		Values:                  values,
 		IncludeAllRules:         true,
@@ -393,7 +396,7 @@ func CreateQueryWithAllRulesAndDynamicConfigs(values map[string]string, dynamicC
 }
 
 // CreateQueryWithAllRulesTenantAndDynamicConfigs creates a comprehensive query with all options
-func CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs map[string]*DimensionConfig) *QueryRule {
+func CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID string, values map[string]string, dynamicConfigs *DimensionConfigs) *QueryRule {
 	return &QueryRule{
 		TenantID:                tenantID,
 		ApplicationID:           applicationID,

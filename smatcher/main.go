@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sort"
 	"strconv"
 
 	matcher "github.com/Fabricates/Matcher"
@@ -52,7 +51,11 @@ type RulesResponse struct {
 }
 
 // QueryRequest represents the HTTP request body
-type QueryRequest map[string]string
+type QueryRequest struct {
+	Tenant      string            `json:"tenant"`
+	Application string            `json:"app"`
+	Dimensions  map[string]string `json:"dimensions"`
+}
 
 // QueryResponse represents the HTTP response
 type QueryResponse []MatchResult
@@ -187,7 +190,10 @@ func (mt *MatcherTool) LoadRulesFromJSON(jsonContent []byte) error {
 				Value:         param.ParameterValue,
 				MatchType:     matchType,
 			}
-			rule.Dimensions = append(rule.Dimensions, dimValue)
+			if rule.Dimensions == nil {
+				rule.Dimensions = make(map[string]*matcher.DimensionValue)
+			}
+			rule.Dimensions[param.ParameterKey] = dimValue
 		}
 
 		if err := mt.engine.AddRule(rule); err != nil {
@@ -199,44 +205,37 @@ func (mt *MatcherTool) LoadRulesFromJSON(jsonContent []byte) error {
 }
 
 // Match performs matching on the given dimensions
-func (mt *MatcherTool) Match(dimensions map[string]string) ([]MatchResult, error) {
+func (mt *MatcherTool) Match(r *QueryRequest) ([]MatchResult, error) {
 	// Create query
 	query := &matcher.QueryRule{
-		TenantID:      "tenant", // Assuming default tenant
-		ApplicationID: "2",      // Assuming default app
-		Values:        dimensions,
+		TenantID:      r.Tenant,      // Assuming default tenant
+		ApplicationID: r.Application, // Assuming default app
+		Values:        r.Dimensions,
 	}
 
 	// Find all matches
-	matches, err := mt.engine.FindAllMatches(query)
-	if err != nil {
+	match, err := mt.engine.FindBestMatch(query)
+	if err != nil || match == nil {
 		return nil, err
 	}
 
-	// Sort by weight descending
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].TotalWeight > matches[j].TotalWeight
-	})
-
 	// Convert to response format
 	var responseMatches []MatchResult
-	for _, match := range matches {
-		result := MatchResult{
-			RuleID: match.Rule.ID,
-			Weight: match.TotalWeight,
-		}
-
-		for _, dim := range match.Rule.Dimensions {
-			dimMatch := DimensionMatch{
-				Name:  dim.DimensionName,
-				Value: dim.Value,
-				Type:  dim.MatchType.String(),
-			}
-			result.Dimensions = append(result.Dimensions, dimMatch)
-		}
-
-		responseMatches = append(responseMatches, result)
+	result := MatchResult{
+		RuleID: match.Rule.ID,
+		Weight: match.TotalWeight,
 	}
+
+	for _, dim := range match.Rule.Dimensions {
+		dimMatch := DimensionMatch{
+			Name:  dim.DimensionName,
+			Value: dim.Value,
+			Type:  dim.MatchType.String(),
+		}
+		result.Dimensions = append(result.Dimensions, dimMatch)
+	}
+
+	responseMatches = append(responseMatches, result)
 
 	return responseMatches, nil
 }
@@ -260,7 +259,7 @@ func (mt *MatcherTool) handleMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find all matches
-	matches, err := mt.Match(req)
+	matches, err := mt.Match(&req)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

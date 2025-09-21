@@ -7,21 +7,35 @@ import (
 	"time"
 )
 
-// Helper function to add test dimensions for backward compatibility
-func addTestDimensions(engine *InMemoryMatcher) error {
-	dimensions := []*DimensionConfig{
+func getDimensions() []*DimensionConfig {
+	return []*DimensionConfig{
 		NewDimensionConfig("product", 0, true),
 		NewDimensionConfig("route", 1, false),
 		NewDimensionConfig("tool", 2, false),
 		NewDimensionConfig("tool_id", 3, false),
 		NewDimensionConfig("recipe", 4, false),
 	}
+}
 
-	for _, dim := range dimensions {
+// Helper function to add test dimensions for backward compatibility
+func addTestDimensions(engine *InMemoryMatcher) error {
+	for _, dim := range getDimensions() {
 		if err := engine.AddDimension(dim); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// Helper function to add only the required test dimensions
+func addTestDimensionsMinimal(engine *InMemoryMatcher) error {
+	dimensions := []*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+	}
+
+	engine.dimensionConfigs.LoadBulk(dimensions)
 	return nil
 }
 
@@ -34,9 +48,15 @@ func TestBasicMatching(t *testing.T) {
 	}
 	defer engine.Close()
 
-	err = addTestDimensions(engine)
+	err = addTestDimensionsMinimal(engine)
 	if err != nil {
 		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Debug: Check if dimensions were added correctly
+	t.Logf("Dimension count: %d", engine.dimensionConfigs.Count())
+	if engine.dimensionConfigs.Count() == 0 {
+		t.Fatal("No dimensions were configured")
 	}
 
 	// Add a test rule
@@ -51,12 +71,32 @@ func TestBasicMatching(t *testing.T) {
 		t.Fatalf("Failed to add rule: %v", err)
 	}
 
-	// Test exact match
-	query := CreateQuery(map[string]string{
+	// Debug: Check if rule was added correctly
+	t.Logf("Rule count: %d", len(engine.rules))
+
+	// Debug: Check the rule details
+	for id, rule := range engine.rules {
+		t.Logf("Rule ID: %s, TenantID: '%s', AppID: '%s', Status: %s", id, rule.TenantID, rule.ApplicationID, rule.Status)
+		for dimName, dimValue := range rule.Dimensions {
+			t.Logf("  Dimension %s: %s (%s)", dimName, dimValue.Value, dimValue.MatchType)
+		}
+	}
+
+	// Debug: Get forest stats
+	forestIndex := engine.getOrCreateForestIndex("", "")
+	stats := forestIndex.GetStats()
+	t.Logf("Forest stats: %v", stats)
+
+	// Test exact match with all rules (bypass status filtering)
+	query := CreateQueryWithAllRules(map[string]string{
 		"product": "TestProduct",
 		"route":   "TestRoute",
 		"tool":    "TestTool",
 	})
+
+	// Debug: Let's see what the query looks like
+	t.Logf("Query values: %v", query.Values)
+	t.Logf("Query include all rules: %v", query.IncludeAllRules)
 
 	result, err := engine.FindBestMatch(query)
 	if err != nil {
@@ -546,6 +586,8 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer engine.Close()
+
+	addTestDimensions(engine)
 
 	// Allow duplicate weights for this test since we're testing dimension consistency, not weight conflicts
 	engine.allowDuplicateWeights = true

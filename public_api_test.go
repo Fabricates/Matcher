@@ -127,8 +127,8 @@ func TestPublicAPIImmutability(t *testing.T) {
 
 	// Modify the returned copy
 	retrieved.Metadata["action"] = "modified"
-	if len(retrieved.Dimensions) > 0 {
-		retrieved.Dimensions[0].Value = "modified"
+	if dim := retrieved.GetDimensionValue("product"); dim != nil {
+		dim.Value = "modified"
 	}
 
 	// Get the rule again and verify it wasn't affected
@@ -141,7 +141,9 @@ func TestPublicAPIImmutability(t *testing.T) {
 		t.Error("Rule was modified when it should be immutable")
 	}
 
-	if len(retrievedAgain.Dimensions) > 0 && retrievedAgain.Dimensions[0].Value != "TestProduct" {
-		t.Error("Dimension was modified when it should be immutable")
+	if dim := retrievedAgain.GetDimensionValue("product"); dim != nil {
+		if dim.Value != "TestProduct" {
+			t.Error("Dimension was modified when it should be immutable")
+		}
 	}
 }

@@ -216,8 +216,8 @@ func TestAPIUpdateRuleStatus(t *testing.T) {
 		t.Errorf("Expected 1 dimension, got %d", len(updatedRule.Dimensions))
 	}
 
-	if updatedRule.Dimensions[0].DimensionName != "region" {
-		t.Errorf("Expected dimension 'region', got '%s'", updatedRule.Dimensions[0].DimensionName)
+	if dim, ok := updatedRule.Dimensions["region"]; !ok || dim.DimensionName != "region" {
+		t.Errorf("Expected dimension 'region' to be present and named 'region'")
 	}
 
 	// Test updating non-existent rule
@@ -362,12 +362,12 @@ func TestAPIGetRule(t *testing.T) {
 		t.Errorf("Expected 1 dimension, got %d", len(retrievedRule.Dimensions))
 	}
 
-	if retrievedRule.Dimensions[0].DimensionName != "region" {
-		t.Errorf("Expected dimension 'region', got '%s'", retrievedRule.Dimensions[0].DimensionName)
-	}
-
-	if retrievedRule.Dimensions[0].Value != "us-west" {
-		t.Errorf("Expected value 'us-west', got '%s'", retrievedRule.Dimensions[0].Value)
+	if dim := retrievedRule.GetDimensionValue("region"); dim == nil {
+		t.Errorf("Expected dimension 'region' to exist")
+	} else {
+		if dim.Value != "us-west" {
+			t.Errorf("Expected value 'us-west', got '%s'", dim.Value)
+		}
 	}
 
 	if retrievedRule.Metadata["owner"] != "team-alpha" {
@@ -588,6 +588,19 @@ func TestAPIAddSimpleRule(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Add dimension configurations before adding rule
+	regionDim := NewDimensionConfig("region", 0, false)
+	regionDim.SetWeight(MatchTypeEqual, 10.0)
+	if err := engine.AddDimension(regionDim); err != nil {
+		t.Fatalf("Failed to add region dimension: %v", err)
+	}
+
+	envDim := NewDimensionConfig("env", 1, false)
+	envDim.SetWeight(MatchTypeEqual, 5.0)
+	if err := engine.AddDimension(envDim); err != nil {
+		t.Fatalf("Failed to add env dimension: %v", err)
+	}
+
 	// Add simple rule
 	dimensions := map[string]string{"region": "us-west", "env": "prod"}
 	manualWeight := 5.0
@@ -611,8 +624,17 @@ func TestAPIAddAnyRule(t *testing.T) {
 	}
 	defer engine.Close()
 
-	// Add any rule
+	// Add dimension configurations before adding rule
 	dimensionNames := []string{"region", "env", "service"}
+	for i, name := range dimensionNames {
+		dim := NewDimensionConfig(name, i, false)
+		dim.SetWeight(MatchTypeAny, 5.0)
+		if err := engine.AddDimension(dim); err != nil {
+			t.Fatalf("Failed to add %s dimension: %v", name, err)
+		}
+	}
+
+	// Add any rule
 	manualWeight := 10.0
 
 	err = engine.AddAnyRule("any-test", dimensionNames, manualWeight)
@@ -724,21 +746,21 @@ func TestDimensionConfig_GetWeight(t *testing.T) {
 	config.SetWeight(MatchTypeAny, 2.0)
 
 	// Test getting defined weights
-	if weight := config.GetWeight(MatchTypeEqual); weight != 10.0 {
-		t.Errorf("Expected weight 10.0 for Equal match type, got %.1f", weight)
+	if weight, exists := config.GetWeight(MatchTypeEqual); !exists || weight != 10.0 {
+		t.Errorf("Expected weight 10.0 for Equal match type, got %.1f (exists: %v)", weight, exists)
 	}
 
-	if weight := config.GetWeight(MatchTypePrefix); weight != 7.0 {
-		t.Errorf("Expected weight 7.0 for Prefix match type, got %.1f", weight)
+	if weight, exists := config.GetWeight(MatchTypePrefix); !exists || weight != 7.0 {
+		t.Errorf("Expected weight 7.0 for Prefix match type, got %.1f (exists: %v)", weight, exists)
 	}
 
-	if weight := config.GetWeight(MatchTypeAny); weight != 2.0 {
-		t.Errorf("Expected weight 2.0 for Any match type, got %.1f", weight)
+	if weight, exists := config.GetWeight(MatchTypeAny); !exists || weight != 2.0 {
+		t.Errorf("Expected weight 2.0 for Any match type, got %.1f (exists: %v)", weight, exists)
 	}
 
 	// Test getting undefined weight (should return 0.0, no default weight anymore)
-	if weight := config.GetWeight(MatchTypeSuffix); weight != 0.0 {
-		t.Errorf("Expected 0.0 for undefined Suffix match type, got %.1f", weight)
+	if weight, exists := config.GetWeight(MatchTypeSuffix); exists || weight != 0.0 {
+		t.Errorf("Expected 0.0 for undefined Suffix match type, got %.1f (exists: %v)", weight, exists)
 	}
 
 	// Test case 2: GetWeight with no defined weights (all should return 0.0)
@@ -746,8 +768,8 @@ func TestDimensionConfig_GetWeight(t *testing.T) {
 
 	matchTypes := []MatchType{MatchTypeEqual, MatchTypePrefix, MatchTypeSuffix, MatchTypeAny}
 	for _, mt := range matchTypes {
-		if weight := emptyConfig.GetWeight(mt); weight != 0.0 {
-			t.Errorf("Expected 0.0 for %s match type, got %.1f", mt, weight)
+		if weight, exists := emptyConfig.GetWeight(mt); exists || weight != 0.0 {
+			t.Errorf("Expected 0.0 for %s match type, got %.1f (exists: %v)", mt, weight, exists)
 		}
 	}
 
@@ -756,19 +778,19 @@ func TestDimensionConfig_GetWeight(t *testing.T) {
 
 	// Set initial weight
 	overrideConfig.SetWeight(MatchTypeEqual, 8.0)
-	if weight := overrideConfig.GetWeight(MatchTypeEqual); weight != 8.0 {
-		t.Errorf("Expected weight 8.0 after initial set, got %.1f", weight)
+	if weight, exists := overrideConfig.GetWeight(MatchTypeEqual); !exists || weight != 8.0 {
+		t.Errorf("Expected weight 8.0 after initial set, got %.1f (exists: %v)", weight, exists)
 	}
 
 	// Override the weight
 	overrideConfig.SetWeight(MatchTypeEqual, 12.0)
-	if weight := overrideConfig.GetWeight(MatchTypeEqual); weight != 12.0 {
-		t.Errorf("Expected weight 12.0 after override, got %.1f", weight)
+	if weight, exists := overrideConfig.GetWeight(MatchTypeEqual); !exists || weight != 12.0 {
+		t.Errorf("Expected weight 12.0 after override, got %.1f (exists: %v)", weight, exists)
 	}
 
 	// Other match types should still return 0.0 (no default weight anymore)
-	if weight := overrideConfig.GetWeight(MatchTypePrefix); weight != 0.0 {
-		t.Errorf("Expected 0.0 for Prefix after override, got %.1f", weight)
+	if weight, exists := overrideConfig.GetWeight(MatchTypePrefix); exists || weight != 0.0 {
+		t.Errorf("Expected 0.0 for Prefix after override, got %.1f (exists: %v)", weight, exists)
 	}
 }
 
@@ -789,9 +811,9 @@ func TestDimensionConfig_SetWeightFunction(t *testing.T) {
 
 	// Verify all weights were set correctly
 	for matchType, expectedWeight := range weights {
-		actualWeight := config.GetWeight(matchType)
-		if actualWeight != expectedWeight {
-			t.Errorf("Match type %s: expected weight %.1f, got %.1f", matchType, expectedWeight, actualWeight)
+		actualWeight, exists := config.GetWeight(matchType)
+		if !exists || actualWeight != expectedWeight {
+			t.Errorf("Match type %s: expected weight %.1f, got %.1f (exists: %v)", matchType, expectedWeight, actualWeight, exists)
 		}
 	}
 
@@ -830,8 +852,8 @@ func TestNewDimensionConfigWithWeightsFunction(t *testing.T) {
 	// Test that unset match types return 0.0 (no DefaultWeight anymore)
 	// Note: All match types in the weights map above are set, so we need to test a different approach
 	// or verify that GetWeight returns the correct explicit values
-	if config.GetWeight(MatchTypePrefix) != 10.0 {
-		t.Errorf("Expected MatchTypePrefix weight 10.0 from explicit weights, got %.1f", config.GetWeight(MatchTypePrefix))
+	if weight, exists := config.GetWeight(MatchTypePrefix); !exists || weight != 10.0 {
+		t.Errorf("Expected MatchTypePrefix weight 10.0 from explicit weights, got %.1f (exists: %v)", weight, exists)
 	}
 
 	// Test what happens if we query a type that was explicitly set
@@ -839,9 +861,9 @@ func TestNewDimensionConfigWithWeightsFunction(t *testing.T) {
 
 	// Test that all weights were set correctly
 	for matchType, expectedWeight := range weights {
-		actualWeight := config.GetWeight(matchType)
-		if actualWeight != expectedWeight {
-			t.Errorf("Match type %s: expected weight %.1f, got %.1f", matchType, expectedWeight, actualWeight)
+		actualWeight, exists := config.GetWeight(matchType)
+		if !exists || actualWeight != expectedWeight {
+			t.Errorf("Match type %s: expected weight %.1f, got %.1f (exists: %v)", matchType, expectedWeight, actualWeight, exists)
 		}
 	}
 
@@ -1065,9 +1087,8 @@ func TestCreateQueryWithDynamicConfigs(t *testing.T) {
 		"env":    "prod",
 	}
 
-	dynamicConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false),
-	}
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(NewDimensionConfig("region", 0, false))
 
 	query := CreateQueryWithDynamicConfigs(values, dynamicConfigs)
 
@@ -1087,12 +1108,14 @@ func TestCreateQueryWithDynamicConfigs(t *testing.T) {
 		t.Error("Expected IncludeAllRules to be false")
 	}
 
-	if len(query.DynamicDimensionConfigs) != 1 {
-		t.Errorf("Expected 1 dynamic config, got %d", len(query.DynamicDimensionConfigs))
+	if query.DynamicDimensionConfigs.Count() != 1 {
+		t.Errorf("Expected 1 dynamic config, got %d", query.DynamicDimensionConfigs.Count())
 	}
 
-	if query.DynamicDimensionConfigs["region"].Name != "region" {
-		t.Errorf("Expected region config name 'region', got '%s'", query.DynamicDimensionConfigs["region"].Name)
+	// Test that the region config is accessible via GetSortedNames
+	sortedNames := query.DynamicDimensionConfigs.GetSortedNames()
+	if len(sortedNames) != 1 || sortedNames[0] != "region" {
+		t.Errorf("Expected sorted names to contain 'region', got %v", sortedNames)
 	}
 }
 
@@ -1104,10 +1127,9 @@ func TestCreateQueryWithTenantAndDynamicConfigs(t *testing.T) {
 		"priority": "high",
 	}
 
-	dynamicConfigs := map[string]*DimensionConfig{
-		"category": NewDimensionConfig("category", 0, true),
-		"priority": NewDimensionConfig("priority", 1, false),
-	}
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(NewDimensionConfig("category", 0, true))
+	dynamicConfigs.Add(NewDimensionConfig("priority", 1, false))
 
 	query := CreateQueryWithTenantAndDynamicConfigs(tenantID, applicationID, values, dynamicConfigs)
 
@@ -1135,8 +1157,8 @@ func TestCreateQueryWithTenantAndDynamicConfigs(t *testing.T) {
 		t.Error("Expected IncludeAllRules to be false")
 	}
 
-	if len(query.DynamicDimensionConfigs) != 2 {
-		t.Errorf("Expected 2 dynamic configs, got %d", len(query.DynamicDimensionConfigs))
+	if query.DynamicDimensionConfigs.Count() != 2 {
+		t.Errorf("Expected 2 dynamic configs, got %d", query.DynamicDimensionConfigs.Count())
 	}
 }
 
@@ -1146,9 +1168,8 @@ func TestCreateQueryWithAllRulesAndDynamicConfigs(t *testing.T) {
 		"version": "1.2.3",
 	}
 
-	dynamicConfigs := map[string]*DimensionConfig{
-		"service": NewDimensionConfig("service", 0, true),
-	}
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(NewDimensionConfig("service", 0, true))
 
 	query := CreateQueryWithAllRulesAndDynamicConfigs(values, dynamicConfigs)
 
@@ -1168,8 +1189,8 @@ func TestCreateQueryWithAllRulesAndDynamicConfigs(t *testing.T) {
 		t.Error("Expected IncludeAllRules to be true")
 	}
 
-	if len(query.DynamicDimensionConfigs) != 1 {
-		t.Errorf("Expected 1 dynamic config, got %d", len(query.DynamicDimensionConfigs))
+	if query.DynamicDimensionConfigs.Count() != 1 {
+		t.Errorf("Expected 1 dynamic config, got %d", query.DynamicDimensionConfigs.Count())
 	}
 }
 
@@ -1182,11 +1203,10 @@ func TestCreateQueryWithAllRulesTenantAndDynamicConfigs(t *testing.T) {
 		"resource":  "user",
 	}
 
-	dynamicConfigs := map[string]*DimensionConfig{
-		"user_type": NewDimensionConfig("user_type", 0, true),
-		"action":    NewDimensionConfig("action", 1, true),
-		"resource":  NewDimensionConfig("resource", 2, false),
-	}
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(NewDimensionConfig("user_type", 0, true))
+	dynamicConfigs.Add(NewDimensionConfig("action", 1, true))
+	dynamicConfigs.Add(NewDimensionConfig("resource", 2, false))
 
 	query := CreateQueryWithAllRulesTenantAndDynamicConfigs(tenantID, applicationID, values, dynamicConfigs)
 
@@ -1218,33 +1238,28 @@ func TestCreateQueryWithAllRulesTenantAndDynamicConfigs(t *testing.T) {
 		t.Error("Expected IncludeAllRules to be true")
 	}
 
-	if len(query.DynamicDimensionConfigs) != 3 {
-		t.Errorf("Expected 3 dynamic configs, got %d", len(query.DynamicDimensionConfigs))
+	if query.DynamicDimensionConfigs.Count() != 3 {
+		t.Errorf("Expected 3 dynamic configs, got %d", query.DynamicDimensionConfigs.Count())
 	}
 
-	// Verify all dynamic configs
-	expectedConfigs := map[string]struct {
-		weight   float64
-		required bool
-	}{
-		"user_type": {25.0, true},
-		"action":    {20.0, true},
-		"resource":  {10.0, false},
+	// Verify all dynamic configs using available methods
+	expectedConfigs := map[string]bool{
+		"user_type": true,  // required
+		"action":    true,  // required
+		"resource":  false, // not required
 	}
 
-	for name, expected := range expectedConfigs {
-		config := query.DynamicDimensionConfigs[name]
-		if config == nil {
-			t.Errorf("Missing dynamic config for %s", name)
+	sortedNames := query.DynamicDimensionConfigs.GetSortedNames()
+	for _, name := range sortedNames {
+		expectedRequired, exists := expectedConfigs[name]
+		if !exists {
+			t.Errorf("Unexpected dynamic config for %s", name)
 			continue
 		}
 
-		if config.Name != name {
-			t.Errorf("Config %s: expected name '%s', got '%s'", name, name, config.Name)
-		}
-
-		if config.Required != expected.required {
-			t.Errorf("Config %s: expected required %v, got %v", name, expected.required, config.Required)
+		isRequired := query.DynamicDimensionConfigs.IsRequired(name)
+		if isRequired != expectedRequired {
+			t.Errorf("Config %s: expected required %v, got %v", name, expectedRequired, isRequired)
 		}
 	}
 }
@@ -1302,9 +1317,12 @@ func TestDynamicConfigsIntegration(t *testing.T) {
 				dynamicConfig := NewDimensionConfig("region", 0, false)
 				dynamicConfig.SetWeight(MatchTypeEqual, 100.0)
 
+				dynamicConfigs := NewDimensionConfigs()
+				dynamicConfigs.Add(dynamicConfig)
+
 				return CreateQueryWithDynamicConfigs(
 					map[string]string{"region": "us-west"},
-					map[string]*DimensionConfig{"region": dynamicConfig},
+					dynamicConfigs,
 				)
 			},
 			expectMatch: true,
@@ -1315,10 +1333,13 @@ func TestDynamicConfigsIntegration(t *testing.T) {
 				dynamicConfig := NewDimensionConfig("region", 0, false)
 				dynamicConfig.SetWeight(MatchTypeEqual, 150.0)
 
+				dynamicConfigs := NewDimensionConfigs()
+				dynamicConfigs.Add(dynamicConfig)
+
 				return CreateQueryWithTenantAndDynamicConfigs(
 					"tenant1", "app1",
 					map[string]string{"region": "us-west"},
-					map[string]*DimensionConfig{"region": dynamicConfig},
+					dynamicConfigs,
 				)
 			},
 			expectMatch: true,
@@ -1329,9 +1350,12 @@ func TestDynamicConfigsIntegration(t *testing.T) {
 				dynamicConfig := NewDimensionConfig("region", 0, false)
 				dynamicConfig.SetWeight(MatchTypeEqual, 60.0)
 
+				dynamicConfigs := NewDimensionConfigs()
+				dynamicConfigs.Add(dynamicConfig)
+
 				return CreateQueryWithAllRulesAndDynamicConfigs(
 					map[string]string{"region": "us-west"},
-					map[string]*DimensionConfig{"region": dynamicConfig},
+					dynamicConfigs,
 				)
 			},
 			expectMatch: true,
@@ -1342,10 +1366,13 @@ func TestDynamicConfigsIntegration(t *testing.T) {
 				dynamicConfig := NewDimensionConfig("region", 0, false)
 				dynamicConfig.SetWeight(MatchTypeEqual, 50.0)
 
+				dynamicConfigs := NewDimensionConfigs()
+				dynamicConfigs.Add(dynamicConfig)
+
 				return CreateQueryWithAllRulesTenantAndDynamicConfigs(
 					"tenant1", "app1",
 					map[string]string{"region": "us-west"},
-					map[string]*DimensionConfig{"region": dynamicConfig},
+					dynamicConfigs,
 				)
 			},
 			expectMatch: true,

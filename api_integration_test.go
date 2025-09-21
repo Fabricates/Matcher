@@ -82,6 +82,13 @@ func TestMatcherEngineFullAPIIntegration(t *testing.T) {
 	}
 	stopChan <- true
 
+	// Add dimension configuration before adding rule
+	regionDim := NewDimensionConfig("region", 0, false)
+	regionDim.SetWeight(MatchTypeEqual, 10.0)
+	if err := engine.AddDimension(regionDim); err != nil {
+		t.Errorf("Failed to add dimension: %v", err)
+	}
+
 	// Add a rule and test RebuildIndex
 	rule := NewRule("rebuild-test").
 		Dimension("region", "us-west", MatchTypeEqual).
@@ -170,38 +177,20 @@ func TestMultiLevelCacheAPIIntegration(t *testing.T) {
 
 func TestForestAPIIntegration(t *testing.T) {
 	// Integration test for Forest API methods
-	forest := CreateForestIndex()
+	forest := CreateForestIndexCompat()
 
-	// Test GetDefaultDimensionOrder
-	defaultOrder := forest.GetDefaultDimensionOrder()
-	if defaultOrder == nil {
-		t.Error("GetDefaultDimensionOrder returned nil")
-	}
-
-	// Test GetDimensionOrder
-	order := forest.GetDimensionOrder()
-	if order == nil {
-		t.Error("GetDimensionOrder returned nil")
-	}
-
-	// Test SetDimensionOrder
-	newOrder := []string{"region", "env", "service"}
-	forest.SetDimensionOrder(newOrder)
-
-	// Test InitializeDimension
+	// Test InitializeDimension (compatibility method)
 	forest.InitializeDimension("new-dim")
 
-	// Verify it was added
-	updatedOrder := forest.GetDimensionOrder()
-	found := false
-	for _, dim := range updatedOrder {
-		if dim == "new-dim" {
-			found = true
-			break
-		}
+	// Test that forest was created successfully
+	if forest == nil {
+		t.Error("CreateForestIndexCompat returned nil")
 	}
-	if !found {
-		t.Log("InitializeDimension may not have added dimension - this could be expected behavior")
+
+	// Test that we can get stats from the forest
+	stats := forest.GetStats()
+	if stats == nil {
+		t.Error("GetStats returned nil")
 	}
 }
 

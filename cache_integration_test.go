@@ -51,21 +51,14 @@ func TestSimpleCoverageBoosters(t *testing.T) {
 	t.Logf("MultiLevel cache stats: %v", mlcStats)
 
 	// Test Forest methods that aren't covered
-	forest := CreateForestIndex()
+	forest := CreateForestIndexCompat()
 
-	// Cover GetDefaultDimensionOrder
-	defaultOrder := forest.GetDefaultDimensionOrder()
-	t.Logf("Default dimension order: %v", defaultOrder)
+	// Test forest creation and basic functionality
+	if forest == nil {
+		t.Error("CreateForestIndexCompat returned nil")
+	}
 
-	// Cover GetDimensionOrder
-	order := forest.GetDimensionOrder()
-	t.Logf("Current dimension order: %v", order)
-
-	// Cover SetDimensionOrder
-	newOrder := []string{"region", "env", "service"}
-	forest.SetDimensionOrder(newOrder)
-
-	// Cover InitializeDimension
+	// Cover InitializeDimension (compatibility method)
 	forest.InitializeDimension("new-dimension")
 
 	// Test types methods

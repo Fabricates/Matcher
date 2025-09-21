@@ -38,7 +38,12 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 
 ## 🆕 Recent Updates (September 2025)
 
-### Test Suite Improvements
+### Performance Optimization
+- **DimensionConfigs Bulk Loading** - Added `LoadBulk()` method for efficient dimension loading during matcher initialization
+- **Single-Sort Optimization** - Dimensions are now sorted once during bulk loading instead of after each individual addition
+- **Startup Performance** - Significant improvement in matcher initialization time, especially with many dimensions
+
+### Test Suite Improvements  
 - **Fixed 162/164 tests** - Comprehensive test suite stabilization
 - **Dimension Configuration Fixes** - Added proper dimension setup across all test files
 - **Forest Index Testing** - Enhanced forest-based tests with correct dimension configurations
@@ -48,6 +53,7 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - **Weight Conflict Status Testing** - Added comprehensive tests for status-based weight uniqueness
 
 ### Key Technical Fixes
+- ✅ **Dimension Loading Optimization**: Implemented `LoadBulk()` method that reduces initialization time from O(n²) to O(n log n) 
 - ✅ **Matcher Tests**: Added dimension configurations to core matcher functionality tests
 - ✅ **Forest Tests**: Fixed DAG, shared node, and forest structure tests
 - ✅ **API Tests**: Corrected integration tests for rule operations

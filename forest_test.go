@@ -6,38 +6,37 @@ import (
 
 func TestForestStructure(t *testing.T) {
 	// Set up dimension configs for the test
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region":  NewDimensionConfig("region", 0, false),
-		"env":     NewDimensionConfig("env", 1, false),
-		"service": NewDimensionConfig("service", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigs()
+	dimensionConfigs.Add(NewDimensionConfig("region", 0, false))
+	dimensionConfigs.Add(NewDimensionConfig("env", 1, false))
+	dimensionConfigs.Add(NewDimensionConfig("service", 2, false))
 
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules with different primary dimensions
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			"env":    {DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 		Metadata: map[string]string{"weight": "10"},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-east", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "staging", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-east", MatchType: MatchTypeEqual},
+			"env":    {DimensionName: "env", Value: "staging", MatchType: MatchTypeEqual},
 		},
 		Metadata: map[string]string{"weight": "20"},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
-			{DimensionName: "service", Value: "api", MatchType: MatchTypePrefix},
+		Dimensions: map[string]*DimensionValue{
+			"region":  {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			"service": {DimensionName: "service", Value: "api", MatchType: MatchTypePrefix},
 		},
 		Metadata: map[string]string{"weight": "15"},
 	}
@@ -95,19 +94,18 @@ func TestForestStructure(t *testing.T) {
 
 func TestForestNodeSearch(t *testing.T) {
 	// Set up dimension configs for the test
-	dimensionConfigs := map[string]*DimensionConfig{
-		"service": NewDimensionConfig("service", 0, false),
-		"version": NewDimensionConfig("version", 1, false),
-	}
+	dimensionConfigs := NewDimensionConfigs()
+	dimensionConfigs.Add(NewDimensionConfig("service", 0, false))
+	dimensionConfigs.Add(NewDimensionConfig("version", 1, false))
 
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create a rule with prefix matching
 	rule := &Rule{
 		ID: "prefix-rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "service", Value: "api", MatchType: MatchTypePrefix},
-			{DimensionName: "version", Value: "v1", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"service": {DimensionName: "service", Value: "api", MatchType: MatchTypePrefix},
+			"version": {DimensionName: "version", Value: "v1", MatchType: MatchTypeEqual},
 		},
 		Metadata: map[string]string{"weight": "10"},
 	}
@@ -145,16 +143,15 @@ func TestForestNodeSearch(t *testing.T) {
 
 func TestForestRemoveRule(t *testing.T) {
 	// Set up dimension configs for the test
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false),
-	}
+	dimensionConfigs := NewDimensionConfigs()
+	dimensionConfigs.Add(NewDimensionConfig("region", 0, false))
 
 	forest := CreateRuleForest(dimensionConfigs)
 
 	rule := &Rule{
 		ID: "test-rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Metadata: map[string]string{"weight": "10"},
 	}

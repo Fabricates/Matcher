@@ -6,11 +6,11 @@ import (
 
 func TestSharedNodeRuleManagement(t *testing.T) {
 	// Create dimension configurations for proper testing
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+	}, nil)
 
 	forest := &ForestIndex{
 		RuleForest: CreateRuleForest(dimensionConfigs),
@@ -19,28 +19,28 @@ func TestSharedNodeRuleManagement(t *testing.T) {
 	// Create multiple rules that will share the same tree path
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
@@ -109,11 +109,11 @@ func TestSharedNodeRuleManagement(t *testing.T) {
 
 func TestSharedNodeWithDifferentPaths(t *testing.T) {
 	// Create dimension configurations for proper testing
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+	}, nil)
 
 	forest := &ForestIndex{
 		RuleForest: CreateRuleForest(dimensionConfigs),
@@ -122,28 +122,28 @@ func TestSharedNodeWithDifferentPaths(t *testing.T) {
 	// Create rules that share some nodes but diverge
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual}, // Different tool
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual}, // Different tool
 		},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual}, // Different route
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual}, // Different route
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
@@ -216,12 +216,12 @@ func TestSharedNodeWithDifferentPaths(t *testing.T) {
 
 func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 	// Create dimension configurations for proper testing
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-		"env":     NewDimensionConfig("env", 3, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+		NewDimensionConfig("env", 3, false),
+	}, nil)
 
 	forest := &ForestIndex{
 		RuleForest: CreateRuleForest(dimensionConfigs),
@@ -230,20 +230,20 @@ func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 	// Create rules that will create a deep tree structure
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+			"env":     {DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual}, // Different tool
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual}, // Different tool
 		},
 	}
 
@@ -251,9 +251,11 @@ func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 	forest.AddRule(rule1)
 	forest.AddRule(rule2)
 
-	// Debug: Check dimension order
-	dimOrder := forest.GetDimensionOrder()
-	t.Logf("Dimension order: %v", dimOrder)
+	// Debug: Check dimension order using available methods
+	if forest.Dimensions != nil {
+		dimOrder := forest.Dimensions.GetSortedNames()
+		t.Logf("Dimension order: %v", dimOrder)
+	}
 
 	// Debug: Check forest stats
 	debugStats := forest.GetStats()
@@ -338,11 +340,11 @@ func TestNodeCleanupAfterRuleRemoval(t *testing.T) {
 
 func TestForestStatisticsWithSharedNodes(t *testing.T) {
 	// Create dimension configurations for proper testing
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, true),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+	}, nil)
 
 	forest := &ForestIndex{
 		RuleForest: CreateRuleForest(dimensionConfigs),
@@ -351,25 +353,25 @@ func TestForestStatisticsWithSharedNodes(t *testing.T) {
 	// Create multiple rules that share nodes
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual},
 		},
 	}
 

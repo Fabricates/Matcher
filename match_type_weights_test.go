@@ -163,13 +163,14 @@ func TestDynamicConfigsWithMatchTypeWeights(t *testing.T) {
 	dynamicCategoryConfig.SetWeight(MatchTypeEqual, 50.0)  // Much higher weight for exact matches
 	dynamicCategoryConfig.SetWeight(MatchTypePrefix, 30.0) // High weight for prefix matches
 
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(dynamicCategoryConfig)
+
 	query2 := &QueryRule{
 		Values: map[string]string{
 			"category": "urgent",
 		},
-		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"category": dynamicCategoryConfig,
-		},
+		DynamicDimensionConfigs: dynamicConfigs,
 	}
 
 	matches2, err := engine.FindAllMatches(query2)
