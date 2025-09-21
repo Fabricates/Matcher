@@ -112,8 +112,8 @@ func (mt *MatcherTool) LoadDimensionsFromJSON(jsonContent []byte) error {
 				continue
 			}
 			matchType := mt - 1
-			if mt < 0 {
-				mt = 0
+			if matchType < 0 {
+				matchType = 0
 			}
 			var weight float64
 			switch val := v.(type) {
