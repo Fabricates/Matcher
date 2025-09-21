@@ -90,12 +90,12 @@ func TestHighConcurrencyNoPartialRules(t *testing.T) {
 					// Deep validation of dimensions
 					for dimIdx, dim := range rule.Dimensions {
 						if dim == nil {
-							addIssue(fmt.Sprintf("Query worker %d match %d: Nil dimension %d in rule %s", workerID, matchIdx, dimIdx, rule.ID))
+							addIssue(fmt.Sprintf("Query worker %d match %d: Nil dimension %s in rule %s", workerID, matchIdx, dimIdx, rule.ID))
 							continue
 						}
 
 						if dim.DimensionName == "" {
-							addIssue(fmt.Sprintf("Query worker %d match %d: Empty dimension name at index %d in rule %s", workerID, matchIdx, dimIdx, rule.ID))
+							addIssue(fmt.Sprintf("Query worker %d match %d: Empty dimension name at index %s in rule %s", workerID, matchIdx, dimIdx, rule.ID))
 						}
 					}
 

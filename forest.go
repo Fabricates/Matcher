@@ -2,7 +2,6 @@ package matcher
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -27,14 +26,14 @@ type MatchBranch struct {
 
 // RuleForest represents the forest structure with shared nodes
 type RuleForest struct {
-	TenantID         string                      `json:"tenant_id,omitempty"`      // Tenant identifier for this forest
-	ApplicationID    string                      `json:"application_id,omitempty"` // Application identifier for this forest
-	Trees            map[MatchType][]*SharedNode `json:"trees"`                    // Trees organized by first dimension match type
-	EqualTreesIndex  map[string]*SharedNode      `json:"-"`                        // Hash map index for O(1) lookup of equal match trees by first dimension value
-	DimensionOrder   []string                    `json:"dimension_order"`          // Order of dimensions for tree traversal
-	RuleIndex        map[string][]*SharedNode    `json:"rule_index"`               // Index of rules to their nodes for quick removal
-	DimensionConfigs map[string]*DimensionConfig `json:"-"`                        // Reference to dimension configurations (not serialized)
-	mu               sync.RWMutex
+	TenantID          string                       `json:"tenant_id,omitempty"`      // Tenant identifier for this forest
+	ApplicationID     string                       `json:"application_id,omitempty"` // Application identifier for this forest
+	Trees             map[MatchType][]*SharedNode  `json:"trees"`                    // Trees organized by first dimension match type
+	EqualTreesIndex   map[string]*SharedNode       `json:"-"`                        // Hash map index for O(1) lookup of equal match trees by first dimension value
+	Dimensions        *DimensionConfigs            `json:"dimension_order"`          // Order of dimensions for tree traversal
+	RuleIndex         map[string][]*SharedNode     `json:"rule_index"`               // Index of rules to their nodes for quick removal
+	NodeRelationships map[string]map[string]string `json:"-"`                        // Efficient relationship map for fast dumping: current_node -> rule_id -> next_node
+	mu                sync.RWMutex
 }
 
 // CreateSharedNode creates a shared node
@@ -98,140 +97,137 @@ func (sn *SharedNode) RemoveRule(ruleID string) bool {
 }
 
 // CreateRuleForest creates a rule forest with the structure
-func CreateRuleForest(dimensionConfigs map[string]*DimensionConfig) *RuleForest {
-	return &RuleForest{
-		Trees:            make(map[MatchType][]*SharedNode),
-		EqualTreesIndex:  make(map[string]*SharedNode),
-		DimensionOrder:   []string{},
-		RuleIndex:        make(map[string][]*SharedNode),
-		DimensionConfigs: dimensionConfigs,
+func CreateRuleForest(dimensionConfigs *DimensionConfigs) *RuleForest {
+	forest := &RuleForest{
+		Trees:             make(map[MatchType][]*SharedNode),
+		EqualTreesIndex:   make(map[string]*SharedNode),
+		Dimensions:        dimensionConfigs,
+		RuleIndex:         make(map[string][]*SharedNode),
+		NodeRelationships: make(map[string]map[string]string),
 	}
+	return forest
 }
 
 // CreateRuleForestWithTenant creates a rule forest for a specific tenant and application
-func CreateRuleForestWithTenant(tenantID, applicationID string, dimensionConfigs map[string]*DimensionConfig) *RuleForest {
-	return &RuleForest{
-		TenantID:         tenantID,
-		ApplicationID:    applicationID,
-		Trees:            make(map[MatchType][]*SharedNode),
-		EqualTreesIndex:  make(map[string]*SharedNode),
-		DimensionOrder:   []string{},
-		RuleIndex:        make(map[string][]*SharedNode),
-		DimensionConfigs: dimensionConfigs,
+func CreateRuleForestWithTenant(tenantID, applicationID string, dimensionConfigs *DimensionConfigs) *RuleForest {
+	forest := &RuleForest{
+		TenantID:          tenantID,
+		ApplicationID:     applicationID,
+		Trees:             make(map[MatchType][]*SharedNode),
+		EqualTreesIndex:   make(map[string]*SharedNode),
+		Dimensions:        dimensionConfigs,
+		RuleIndex:         make(map[string][]*SharedNode),
+		NodeRelationships: make(map[string]map[string]string),
 	}
+	return forest
 }
 
 // CreateForestIndexCompat creates a forest index compatible with the old interface
 func CreateForestIndexCompat() *RuleForest {
-	return CreateRuleForest(make(map[string]*DimensionConfig))
+	return CreateRuleForest(NewDimensionConfigs())
 }
 
-// GetDefaultDimensionOrder returns the default dimension order from types.go
-func (rf *RuleForest) GetDefaultDimensionOrder() []string {
-	if len(rf.DimensionOrder) == 0 {
-		// Return some default order - this should be customizable
-		return []string{"user_id", "event_type", "platform"}
+// generateNodeName generates a unique node name in the pattern 'dimension|value+match_type'
+func generateNodeName(dimensionName, value string, matchType MatchType) string {
+	var matchTypeStr string
+	switch matchType {
+	case MatchTypeEqual:
+		matchTypeStr = ""
+	case MatchTypeAny:
+		matchTypeStr = "*"
+	case MatchTypePrefix:
+		matchTypeStr = "*"
+		value = value + "*"
+	case MatchTypeSuffix:
+		matchTypeStr = "*"
+		value = "*" + value
 	}
-	return rf.DimensionOrder
+	return fmt.Sprintf("%s|%s%s", dimensionName, value, matchTypeStr)
 }
 
-// GetDimensionOrder returns the current dimension order
-func (rf *RuleForest) GetDimensionOrder() []string {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
+// cleanupNodeRelationshipsForRule removes relationships for a specific rule from a specific node's relationships.
+// It generates the possible node name variants (equal/any/prefix/suffix) and removes the mapping
+// rf.NodeRelationships[nodeName][ruleID] if present. This keeps cleanup targeted and O(1) per node.
+func (rf *RuleForest) cleanupNodeRelationshipsForRule(node *SharedNode, rule *Rule) {
+	// Generate possible node names for this node (different match types)
+	nodeName := generateNodeName(node.DimensionName, node.Value, rule.GetDimensionMatchType(node.DimensionName))
 
-	result := make([]string, len(rf.DimensionOrder))
-	copy(result, rf.DimensionOrder)
-	return result
-}
-
-// SetDimensionOrder sets the dimension order for the forest
-func (rf *RuleForest) SetDimensionOrder(order []string) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	rf.DimensionOrder = make([]string, len(order))
-	copy(rf.DimensionOrder, order)
+	// Remove outgoing relationship entries keyed by these node names
+	if ruleMap, exists := rf.NodeRelationships[nodeName]; exists {
+		if _, ok := ruleMap[rule.ID]; ok {
+			delete(ruleMap, rule.ID)
+			if len(ruleMap) == 0 {
+				delete(rf.NodeRelationships, nodeName)
+			}
+		}
+	}
 }
 
 // AddRule adds a rule to the forest following the dimension order
-func (rf *RuleForest) AddRule(rule *Rule) *Rule {
+func (rf *RuleForest) AddRule(rule *Rule) (*Rule, error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	if len(rule.Dimensions) == 0 {
-		return nil
+		return nil, fmt.Errorf("no rule dimension found")
+	}
+	if rf.Dimensions.Count() <= 0 {
+		return nil, fmt.Errorf("no dimension configured yet")
 	}
 
-	// Validate that rule has dimensions and auto-expand dimension order
-	// Auto-expand dimension order if dimensions are encountered
-	rf.ensureDimensionsInOrder()
+	var sorted = rf.Dimensions.GetSortedNames()
 
 	// Auto-fill missing dimensions with MatchTypeAny if dimension order is established
-	completeRule := rule.Clone()
+	completeRule := rule.CloneAndComplete(sorted)
 
-	// Clear dimensions to rebuild with proper order
-	completeRule.Dimensions = make([]*DimensionValue, 0)
-
-	// For each dimension in the established order, either use rule's dimension or add MatchTypeAny
-	for _, dimName := range rf.DimensionOrder {
-		ruleDim := rule.GetDimensionValue(dimName)
-		if ruleDim != nil {
-			// Rule has this dimension - use it
-			completeRule.Dimensions = append(completeRule.Dimensions, ruleDim)
-		} else {
-			// Rule missing this dimension - add as MatchTypeAny with empty value
-			completeRule.Dimensions = append(completeRule.Dimensions, &DimensionValue{
-				DimensionName: dimName,
-				Value:         "",
-				MatchType:     MatchTypeAny,
-			})
-		}
-	}
-
-	// Sort rule dimensions according to our dimension order
-	// Since completeRule.Dimensions was built following rf.DimensionOrder, it's already sorted
-	sortedDims := completeRule.Dimensions
-
-	if len(sortedDims) == 0 {
-		return nil
-	}
-
-	// Get the first dimension to determine which tree to use
-	firstDim := sortedDims[0]
+	var firstDim *DimensionValue = completeRule.GetDimensionValue(sorted[0])
 
 	// Find or create the root node for this first dimension value and match type
 	var rootNode *SharedNode
 	rootNodes := rf.Trees[firstDim.MatchType]
 
 	// Look for existing root node with the same dimension name and value
-	for _, node := range rootNodes {
-		if node.DimensionName == firstDim.DimensionName && node.Value == firstDim.Value {
-			rootNode = node
-			break
+	if firstDim.MatchType == MatchTypeEqual {
+		indexKey := firstDim.DimensionName + ":" + firstDim.Value
+		if mn, ok := rf.EqualTreesIndex[indexKey]; ok {
+			rootNode = mn
+		}
+	} else {
+		for _, node := range rootNodes {
+			if node.DimensionName == firstDim.DimensionName && node.Value == firstDim.Value {
+				rootNode = node
+				break
+			}
 		}
 	}
 
 	// Create root node if not found
 	if rootNode == nil {
 		rootNode = CreateSharedNode(0, firstDim.DimensionName, firstDim.Value)
-		rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
-
 		// OPTIMIZATION: For equal match types, also add to the hash index for O(1) lookup
 		if firstDim.MatchType == MatchTypeEqual {
 			// Create a composite key: dimensionName:value for uniqueness across different dimensions
 			indexKey := firstDim.DimensionName + ":" + firstDim.Value
 			rf.EqualTreesIndex[indexKey] = rootNode
+			if len(rf.Trees[firstDim.MatchType]) <= 0 {
+				// Append an empty node, check {findCandidateRulesWithQuery}
+				rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], &SharedNode{})
+			}
+		} else {
+			rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
 		}
 	}
 
 	var ruleNodes []*SharedNode
 	ruleNodes = append(ruleNodes, rootNode)
 
+	// Track parent node for relationship building
+	var parentNodeName string
+
 	// Traverse/create path for remaining dimensions
 	current := rootNode
-	for i := 1; i < len(sortedDims); i++ {
-		dim := sortedDims[i]
+	for i := 1; i < len(sorted); i++ {
+		dim := completeRule.GetDimensionValue(sorted[i])
 
 		// Use the original match type from the rule definition - do NOT change it
 		matchType := dim.MatchType
@@ -252,6 +248,25 @@ func (rf *RuleForest) AddRule(rule *Rule) *Rule {
 		if !exists {
 			child = CreateSharedNode(i, dim.DimensionName, dim.Value)
 			branch.Children[dim.Value] = child
+
+			// MAINTAIN RELATIONSHIPS: Track parent-child relationship for efficient dumping
+			parentNodeName = generateNodeName(current.DimensionName, current.Value, dim.MatchType)
+			childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
+
+			// MAINTAIN NODE RELATIONSHIPS: Track rule transitions for efficient dumping
+			if rf.NodeRelationships[parentNodeName] == nil {
+				rf.NodeRelationships[parentNodeName] = make(map[string]string)
+			}
+			rf.NodeRelationships[parentNodeName][completeRule.ID] = childNodeName
+		} else {
+			// Even if child exists, still record the rule transition
+			parentNodeName = generateNodeName(current.DimensionName, current.Value, dim.MatchType)
+			childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
+
+			if rf.NodeRelationships[parentNodeName] == nil {
+				rf.NodeRelationships[parentNodeName] = make(map[string]string)
+			}
+			rf.NodeRelationships[parentNodeName][completeRule.ID] = childNodeName
 		}
 
 		ruleNodes = append(ruleNodes, child)
@@ -260,79 +275,19 @@ func (rf *RuleForest) AddRule(rule *Rule) *Rule {
 
 	// Add rule to the final node (the node for the last dimension the rule specifies)
 	// Use the original match type from the last dimension
-	finalMatchType := sortedDims[len(sortedDims)-1].MatchType
+	var finalMatchType MatchType = MatchTypeAny // default
+	if len(sorted) > 0 {
+		lastDim := completeRule.GetDimensionValue(sorted[len(sorted)-1])
+		if lastDim != nil {
+			finalMatchType = lastDim.MatchType
+		}
+	}
 	current.AddRule(completeRule, finalMatchType)
 
 	// Index the rule for quick removal
 	rf.RuleIndex[completeRule.ID] = ruleNodes
 
-	return completeRule
-}
-
-// ensureDimensionsInOrder ensures all rule dimensions are in the dimension order
-// Auto-expands the dimension order to include dimensions from rules
-func (rf *RuleForest) ensureDimensionsInOrder() {
-	// If we don't have a dimension order yet, establish it from the first rule
-	if len(rf.DimensionOrder) == 0 || len(rf.DimensionOrder) != len(rf.DimensionConfigs) {
-		var dims = make([]*DimensionConfig, len(rf.DimensionConfigs))
-		var i = 0
-		for _, d := range rf.DimensionConfigs {
-			dims[i] = d
-			i++
-		}
-		sort.SliceStable(dims, func(i, j int) bool {
-			dim1, dim1ok := rf.DimensionConfigs[dims[i].Name]
-			dim2, dim2ok := rf.DimensionConfigs[dims[j].Name]
-			if dim1ok && !dim2ok {
-				return true
-			}
-			if dim1ok && dim2ok {
-				return dim1.Index < dim2.Index
-			}
-			return false
-		})
-		for _, dim := range dims {
-			rf.DimensionOrder = append(rf.DimensionOrder, dim.Name)
-		}
-		return
-	}
-}
-
-// sortDimensionsByOrder sorts dimensions according to the forest's dimension order
-func (rf *RuleForest) sortDimensionsByOrder(dimensions []*DimensionValue) []*DimensionValue {
-	// Create a map for quick lookup of dimension order
-	orderMap := make(map[string]int)
-	for i, dimName := range rf.DimensionOrder {
-		orderMap[dimName] = i
-	}
-
-	// Create a copy to sort
-	sorted := make([]*DimensionValue, len(dimensions))
-	copy(sorted, dimensions)
-
-	// Sort according to dimension order
-	sort.Slice(sorted, func(i, j int) bool {
-		orderI, existsI := orderMap[sorted[i].DimensionName]
-		orderJ, existsJ := orderMap[sorted[j].DimensionName]
-
-		// If both dimensions exist in order, use the order
-		if existsI && existsJ {
-			return orderI < orderJ
-		}
-
-		// If only one exists in order, prioritize it
-		if existsI {
-			return true
-		}
-		if existsJ {
-			return false
-		}
-
-		// If neither exists in order, sort alphabetically
-		return sorted[i].DimensionName < sorted[j].DimensionName
-	})
-
-	return sorted
+	return completeRule, nil
 }
 
 // findCandidateRulesWithQueryRule is the actual implementation for QueryRule
@@ -342,7 +297,7 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 
 	candidateRules := make([]RuleWithWeight, 0)
 
-	if len(rf.DimensionOrder) == 0 {
+	if rf.Dimensions.Count() == 0 {
 		return candidateRules
 	}
 
@@ -351,7 +306,7 @@ func (rf *RuleForest) findCandidateRulesWithQueryRule(query *QueryRule) []RuleWi
 
 	// OPTIMIZATION: For equal match types, if we have the first dimension value in the query,
 	// we can directly lookup trees that match that specific value instead of iterating all trees
-	firstDimName := rf.DimensionOrder[0]
+	firstDimName, _ := rf.Dimensions.Get(0)
 	firstDimValue, hasFirstDimValue := query.Values[firstDimName]
 
 	// Process each tree type to find matching rules
@@ -400,15 +355,15 @@ func (rf *RuleForest) FindCandidateRules(queryValues interface{}) []RuleWithWeig
 }
 
 // searchTree searches a single tree for matching rules following dimension order methodology
-func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, candidateRules *[]RuleWithWeight, dimensionConfigs map[string]*DimensionConfig) {
+func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, candidateRules *[]RuleWithWeight, dimensionConfigs *DimensionConfigs) {
 	if node == nil {
 		return
 	}
 
 	// Check if we should continue to the next dimension based on dimension order
-	if depth+1 < len(rf.DimensionOrder) {
+	if depth+1 < rf.Dimensions.Count() {
 		// Get the next dimension according to dimension order
-		nextDimName := rf.DimensionOrder[depth+1]
+		nextDimName, _ := rf.Dimensions.Get(depth + 1)
 		nextQueryValue, hasNextQueryValue := query.Values[nextDimName]
 
 		// If the query doesn't specify this dimension, check if we can still continue
@@ -482,23 +437,18 @@ func (rf *RuleForest) searchTree(node *SharedNode, query *QueryRule, depth int, 
 }
 
 // resolveDimensionConfigs merges dynamic configs with initialized configs for a query
-func (rf *RuleForest) resolveDimensionConfigs(query *QueryRule) map[string]*DimensionConfig {
-	if len(query.DynamicDimensionConfigs) == 0 {
-		return rf.DimensionConfigs
+func (rf *RuleForest) resolveDimensionConfigs(query *QueryRule) *DimensionConfigs {
+	if query.DynamicDimensionConfigs == nil || query.DynamicDimensionConfigs.Count() <= 0 {
+		return rf.Dimensions
 	}
 
-	// Create a copy of the original configs
-	resolvedConfigs := make(map[string]*DimensionConfig)
-	for k, v := range rf.DimensionConfigs {
-		resolvedConfigs[k] = v
+	var dcs []*DimensionConfig
+	for _, dim := range rf.Dimensions.GetSortedNames() {
+		if !query.DynamicDimensionConfigs.Exist(dim) {
+			dcs = append(dcs, rf.Dimensions.CloneDimension(dim))
+		}
 	}
-
-	// Override with dynamic configs
-	for k, v := range query.DynamicDimensionConfigs {
-		resolvedConfigs[k] = v
-	}
-
-	return resolvedConfigs
+	return query.DynamicDimensionConfigs.Clone(dcs)
 }
 
 // searchConflict efficiently finds rules that could conflict with the given rule by traversing the forest structure
@@ -506,12 +456,12 @@ func (rf *RuleForest) searchConflict(newRule *Rule, candidateRules *[]*Rule) {
 	rf.mu.RLock()
 	defer rf.mu.RUnlock()
 
-	if len(newRule.Dimensions) == 0 || len(rf.DimensionOrder) == 0 {
+	if len(newRule.Dimensions) == 0 || rf.Dimensions.Count() == 0 {
 		return
 	}
 
 	// Get the first dimension according to dimension order
-	firstDimName := rf.DimensionOrder[0]
+	firstDimName, _ := rf.Dimensions.Get(0)
 	firstDim := newRule.GetDimensionValue(firstDimName)
 	if firstDim == nil {
 		// Rule doesn't have the first dimension, can't traverse
@@ -541,9 +491,9 @@ func (rf *RuleForest) searchConflictInTree(node *SharedNode, newRule *Rule, dept
 	}
 
 	// Check if we should continue to the next dimension based on dimension order
-	if depth+1 < len(rf.DimensionOrder) {
+	if depth+1 < rf.Dimensions.Count() {
 		// Get the next dimension according to dimension order
-		nextDimName := rf.DimensionOrder[depth+1]
+		nextDimName, _ := rf.Dimensions.Get(depth + 1)
 		nextDim := newRule.GetDimensionValue(nextDimName)
 
 		// If the new rule doesn't have this dimension, check if we can still continue
@@ -698,7 +648,7 @@ func (rf *RuleForest) valuesCanIntersect(value1 string, matchType1 MatchType, va
 }
 
 // insertRuleByWeight inserts a rule into the candidate slice maintaining weight order (highest first)
-func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRule *Rule, dimensionConfigs map[string]*DimensionConfig) {
+func (rf *RuleForest) insertRuleByWeight(candidateRules *[]RuleWithWeight, newRule *Rule, dimensionConfigs *DimensionConfigs) {
 	newWeight := newRule.CalculateTotalWeight(dimensionConfigs)
 
 	// If slice is empty or new rule has highest weight, insert at front
@@ -761,9 +711,10 @@ func (rf *RuleForest) RemoveRule(rule *Rule) {
 		return
 	}
 
-	// Remove rule from all nodes
+	// Remove rule from all nodes and clean up relationships immediately
 	for _, node := range nodes {
 		node.RemoveRule(rule.ID)
+		rf.cleanupNodeRelationshipsForRule(node, rule)
 	}
 
 	// Clean up empty nodes (traverse upward)
@@ -775,84 +726,124 @@ func (rf *RuleForest) RemoveRule(rule *Rule) {
 
 // ReplaceRule atomically replaces one rule with another to prevent partial state visibility
 // This method ensures no intermediate state where both rules coexist in the forest
-func (rf *RuleForest) ReplaceRule(oldRule, newRule *Rule) {
+func (rf *RuleForest) ReplaceRule(oldRule, newRule *Rule) error {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	// Step 1: Remove old rule completely first
+	sorted := rf.Dimensions.GetSortedNames()
+	if len(sorted) <= 0 {
+		return fmt.Errorf("no dimension configured yet")
+	}
+
+	// TRULY ATOMIC APPROACH: Instead of remove-then-add, find the target nodes
+	// for both rules and perform atomic replacement at the node level
+
+	var newNodePath []*SharedNode
+
+	// Step 1: Remove old rule from existing nodes
 	if oldRule != nil {
 		if nodes, exists := rf.RuleIndex[oldRule.ID]; exists {
 			for _, node := range nodes {
 				node.RemoveRule(oldRule.ID)
+				rf.cleanupNodeRelationshipsForRule(node, oldRule)
 			}
 			delete(rf.RuleIndex, oldRule.ID)
 		}
 	}
 
-	// Step 2: Clean up any empty nodes from old rule removal
-	rf.cleanupEmptyNodes()
+	newRule = newRule.CloneAndComplete(sorted)
 
-	// Step 3: Add new rule using standard logic
+	// Step 2: Build path for new rule (but don't add the rule to final node yet)
 	if newRule != nil && len(newRule.Dimensions) > 0 {
-		rf.ensureDimensionsInOrder()
+		firstDim := newRule.GetDimensionValue(sorted[0])
+		var rootNode *SharedNode
+		rootNodes := rf.Trees[firstDim.MatchType]
 
-		sortedDims := rf.sortDimensionsByOrder(newRule.Dimensions)
-		if len(sortedDims) > 0 {
-			firstDim := sortedDims[0]
-			var rootNode *SharedNode
-			rootNodes := rf.Trees[firstDim.MatchType]
-
+		// Find or create root
+		if firstDim.MatchType == MatchTypeEqual {
+			indexKey := firstDim.DimensionName + ":" + firstDim.Value
+			if mn, ok := rf.EqualTreesIndex[indexKey]; ok {
+				rootNode = mn
+			}
+		} else {
 			for _, node := range rootNodes {
 				if node.DimensionName == firstDim.DimensionName && node.Value == firstDim.Value {
 					rootNode = node
 					break
 				}
 			}
-
-			if rootNode == nil {
-				rootNode = CreateSharedNode(0, firstDim.DimensionName, firstDim.Value)
-				rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
-
-				if firstDim.MatchType == MatchTypeEqual {
-					indexKey := firstDim.DimensionName + ":" + firstDim.Value
-					rf.EqualTreesIndex[indexKey] = rootNode
-				}
-			}
-
-			var ruleNodes []*SharedNode
-			ruleNodes = append(ruleNodes, rootNode)
-
-			current := rootNode
-			for i := 1; i < len(sortedDims); i++ {
-				dim := sortedDims[i]
-				matchType := dim.MatchType
-
-				branch, exists := current.Branches[matchType]
-				if !exists {
-					branch = &MatchBranch{
-						MatchType: matchType,
-						Rules:     []*Rule{},
-						Children:  make(map[string]*SharedNode),
-					}
-					current.Branches[matchType] = branch
-				}
-
-				child, exists := branch.Children[dim.Value]
-				if !exists {
-					child = CreateSharedNode(i, dim.DimensionName, dim.Value)
-					branch.Children[dim.Value] = child
-				}
-
-				ruleNodes = append(ruleNodes, child)
-				current = child
-			}
-
-			finalMatchType := sortedDims[len(sortedDims)-1].MatchType
-			current.AddRule(newRule, finalMatchType)
-			rf.RuleIndex[newRule.ID] = ruleNodes
 		}
+
+		if rootNode == nil {
+			rootNode = CreateSharedNode(0, firstDim.DimensionName, firstDim.Value)
+			if firstDim.MatchType == MatchTypeEqual {
+				indexKey := firstDim.DimensionName + ":" + firstDim.Value
+				rf.EqualTreesIndex[indexKey] = rootNode
+				if len(rf.Trees[firstDim.MatchType]) <= 0 {
+					rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], &SharedNode{})
+				}
+			} else {
+				rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], rootNode)
+			}
+		}
+
+		newNodePath = append(newNodePath, rootNode)
+		current := rootNode
+
+		// Build path to final node
+		for i := 1; i < len(sorted); i++ {
+			dim := newRule.GetDimensionValue(sorted[i])
+			matchType := dim.MatchType
+
+			branch, exists := current.Branches[matchType]
+			if !exists {
+				branch = &MatchBranch{
+					MatchType: matchType,
+					Rules:     []*Rule{},
+					Children:  make(map[string]*SharedNode),
+				}
+				current.Branches[matchType] = branch
+			}
+
+			child, exists := branch.Children[dim.Value]
+			if !exists {
+				child = CreateSharedNode(i, dim.DimensionName, dim.Value)
+				branch.Children[dim.Value] = child
+
+				// Track relationships
+				parentNodeName := generateNodeName(current.DimensionName, current.Value, dim.MatchType)
+				childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
+				if rf.NodeRelationships[parentNodeName] == nil {
+					rf.NodeRelationships[parentNodeName] = make(map[string]string)
+				}
+				rf.NodeRelationships[parentNodeName][newRule.ID] = childNodeName
+			} else {
+				// Track relationships for existing nodes
+				parentNodeName := generateNodeName(current.DimensionName, current.Value, dim.MatchType)
+				childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
+				if rf.NodeRelationships[parentNodeName] == nil {
+					rf.NodeRelationships[parentNodeName] = make(map[string]string)
+				}
+				rf.NodeRelationships[parentNodeName][newRule.ID] = childNodeName
+			}
+
+			newNodePath = append(newNodePath, child)
+			current = child
+		}
+
+		// Step 3: Now atomically add the new rule to the final node
+		finalMatchType := newRule.GetDimensionValue(sorted[len(sorted)-1]).MatchType
+		current.AddRule(newRule, finalMatchType)
+		rf.RuleIndex[newRule.ID] = newNodePath
 	}
-} // cleanupEmptyNodes removes empty nodes from the forest
+
+	// Step 4: Clean up empty nodes from old rule removal after new rule is fully added
+	rf.cleanupEmptyNodes()
+
+	return nil
+}
+
+// cleanupEmptyNodes removes empty nodes from the forest
 func (rf *RuleForest) cleanupEmptyNodes() {
 	// This is a simplified cleanup - in practice, you might want more sophisticated cleanup
 	for matchType, trees := range rf.Trees {
@@ -899,19 +890,34 @@ func (rf *RuleForest) GetStats() map[string]interface{} {
 	for _, trees := range rf.Trees {
 		totalTrees += len(trees)
 	}
+	// Cxclude one empty tree node in trees
+	totalTrees += len(rf.EqualTreesIndex) - 1
 
 	levelCounts := make(map[int]int)
 	totalNodes, sharedNodes, maxRules, totalRules := 0, 0, 0, 0
 
 	// Count nodes across all trees
-	for _, trees := range rf.Trees {
-		for _, tree := range trees {
-			count, shared, max, ruleCount := rf.countNodesAndSharing(tree, levelCounts)
-			totalNodes += count
-			sharedNodes += shared
-			totalRules += ruleCount
-			if max > maxRules {
-				maxRules = max
+	for mt, trees := range rf.Trees {
+		// only one equal tree index but many trees
+		if mt == MatchTypeEqual {
+			for _, tree := range rf.EqualTreesIndex {
+				count, shared, max, ruleCount := rf.countNodesAndSharing(tree, levelCounts)
+				totalNodes += count
+				sharedNodes += shared
+				totalRules += ruleCount
+				if max > maxRules {
+					maxRules = max
+				}
+			}
+		} else {
+			for _, tree := range trees {
+				count, shared, max, ruleCount := rf.countNodesAndSharing(tree, levelCounts)
+				totalNodes += count
+				sharedNodes += shared
+				totalRules += ruleCount
+				if max > maxRules {
+					maxRules = max
+				}
 			}
 		}
 	}
@@ -922,7 +928,7 @@ func (rf *RuleForest) GetStats() map[string]interface{} {
 	stats["max_rules_per_node"] = maxRules
 	stats["total_rules"] = totalRules
 	stats["levels"] = levelCounts
-	stats["dimension_order"] = rf.DimensionOrder
+	stats["dimension_order"] = rf.Dimensions
 	stats["total_root_nodes"] = totalTrees // Same as total trees since each tree has one root
 
 	return stats
@@ -976,11 +982,4 @@ func (rf *RuleForest) InitializeDimension(dimensionName string) {
 // ForestIndex provides backward compatibility by embedding RuleForest
 type ForestIndex struct {
 	*RuleForest
-}
-
-// CreateForestIndex creates a forest index using the implementation
-func CreateForestIndex() *ForestIndex {
-	return &ForestIndex{
-		RuleForest: CreateForestIndexCompat(),
-	}
 }

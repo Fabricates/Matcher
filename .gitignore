@@ -45,4 +45,5 @@ test_*/
 **/fix_*.sh
 **/test_*
 **/*test*.txt
-**/snapshot.json
+**/snapshot*
+**/__*

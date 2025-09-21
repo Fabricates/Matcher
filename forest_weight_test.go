@@ -7,27 +7,28 @@ import (
 
 func TestForestWeightOrdering(t *testing.T) {
 	// Set up dimension configs to control weights
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false),
-		"env":    NewDimensionConfig("env", 1, false),
+	dimensionConfigMap := []*DimensionConfig{
+		NewDimensionConfig("region", 0, false),
+		NewDimensionConfig("env", 1, false),
 	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter(dimensionConfigMap, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules with different weights
 	rule1 := &Rule{
 		ID: "rule1-low",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			"env":    {DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
 
 	rule2 := &Rule{
 		ID: "rule2-high",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			"env":    {DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 		Status:       RuleStatusWorking,
 		ManualWeight: new(float64), // Manual weight override
@@ -36,9 +37,9 @@ func TestForestWeightOrdering(t *testing.T) {
 
 	rule3 := &Rule{
 		ID: "rule3-medium",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
-			{DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			"env":    {DimensionName: "env", Value: "prod", MatchType: MatchTypeEqual},
 		},
 		Status:       RuleStatusWorking,
 		ManualWeight: new(float64), // Manual weight override
@@ -96,24 +97,24 @@ func TestForestWeightOrdering(t *testing.T) {
 }
 
 func TestForestStatusFiltering(t *testing.T) {
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("region", 0, false),
+	}, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create working and draft rules
 	workingRule := &Rule{
 		ID: "working-rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
 
 	draftRule := &Rule{
 		ID: "draft-rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Status:       RuleStatusDraft,
 		ManualWeight: new(float64), // Give draft rule higher weight for testing
@@ -169,17 +170,17 @@ func TestForestStatusFiltering(t *testing.T) {
 }
 
 func TestForestNoDuplicateChecks(t *testing.T) {
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("region", 0, false),
+	}, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create rules that would be duplicates if we were checking for them
 	// But the optimization assumes rules are unique within branches
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 		},
 		Status: RuleStatusWorking,
 	}
@@ -210,9 +211,10 @@ func TestForestNoDuplicateChecks(t *testing.T) {
 }
 
 func TestForestOptimizationEfficiency(t *testing.T) {
-	dimensionConfigs := map[string]*DimensionConfig{
-		"region": NewDimensionConfig("region", 0, false), // Base weight, rules will use manual weights
+	dimensionConfigMap := []*DimensionConfig{
+		NewDimensionConfig("region", 0, false), // Base weight, rules will use manual weights
 	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter(dimensionConfigMap, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create multiple rules with different weights
@@ -223,8 +225,8 @@ func TestForestOptimizationEfficiency(t *testing.T) {
 	for _, weight := range weights {
 		rule := &Rule{
 			ID: fmt.Sprintf("rule-%.0f", weight),
-			Dimensions: []*DimensionValue{
-				{DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
+			Dimensions: map[string]*DimensionValue{
+				"region": {DimensionName: "region", Value: "us-west", MatchType: MatchTypeEqual},
 			},
 			Status:       RuleStatusWorking,
 			ManualWeight: new(float64), // Use manual weight for testing

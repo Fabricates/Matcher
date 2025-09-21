@@ -72,26 +72,8 @@ func TestZeroWeightWhenNoDimensionConfig(t *testing.T) {
 
 	// Add the rule - weights should default to 0.0
 	err = engine.AddRule(rule)
-	if err != nil {
-		t.Fatalf("Failed to add rule: %v", err)
-	}
-
-	// Verify the weights were set to default 0.0
-	productDim := rule.GetDimensionValue("product")
-	if productDim == nil {
-		t.Fatal("Product dimension not found")
-	}
-
-	environmentDim := rule.GetDimensionValue("environment")
-	if environmentDim == nil {
-		t.Fatal("Environment dimension not found")
-	}
-
-	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
-	expectedWeight := 0.0 + 0.0 // No dimension configs = 0.0 weight each
-	if totalWeight != expectedWeight {
-		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
+	if err == nil {
+		t.Fatalf("Dimension is required before adding any new rules: %v", err)
 	}
 }
 

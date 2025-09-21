@@ -11,6 +11,7 @@ import (
 
 // CacheEntry represents a cached query result
 type CacheEntry struct {
+	Key       string        `json:"key"`
 	Result    *MatchResult  `json:"result"`
 	Timestamp time.Time     `json:"timestamp"`
 	TTL       time.Duration `json:"ttl"`
@@ -41,7 +42,7 @@ func NewQueryCache(maxSize int, defaultTTL time.Duration) *QueryCache {
 }
 
 // generateCacheKey generates a cache key from a query
-func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
+func (qc *QueryCache) generateCacheKey(query *QueryRule) (string, string) {
 	// Sort dimension values for consistent key generation
 	var keys []string
 	for dim, value := range query.Values {
@@ -80,7 +81,7 @@ func (qc *QueryCache) generateCacheKey(query *QueryRule) string {
 
 	// Generate MD5 hash for consistent key length
 	hash := md5.Sum([]byte(keyString))
-	return fmt.Sprintf("%x", hash)
+	return fmt.Sprintf("%x", hash), keyString
 }
 
 // Get retrieves a cached result for a query
@@ -88,7 +89,7 @@ func (qc *QueryCache) Get(query *QueryRule) *MatchResult {
 	qc.mu.Lock()
 	defer qc.mu.Unlock()
 
-	key := qc.generateCacheKey(query)
+	key, _ := qc.generateCacheKey(query)
 	entry, exists := qc.entries[key]
 
 	if !exists {
@@ -114,11 +115,12 @@ func (qc *QueryCache) Set(query *QueryRule, result *MatchResult) {
 	qc.mu.Lock()
 	defer qc.mu.Unlock()
 
-	key := qc.generateCacheKey(query)
+	key, plain := qc.generateCacheKey(query)
 	now := time.Now()
 
 	// Create cache entry
 	entry := &CacheEntry{
+		Key:       plain,
 		Result:    result,
 		Timestamp: now,
 		TTL:       qc.defaultTTL,
@@ -139,11 +141,12 @@ func (qc *QueryCache) SetWithTTL(query *QueryRule, result *MatchResult, ttl time
 	qc.mu.Lock()
 	defer qc.mu.Unlock()
 
-	key := qc.generateCacheKey(query)
+	key, plain := qc.generateCacheKey(query)
 	now := time.Now()
 
 	// Create cache entry with custom TTL
 	entry := &CacheEntry{
+		Key:       plain,
 		Result:    result,
 		Timestamp: now,
 		TTL:       ttl,

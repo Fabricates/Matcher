@@ -7,11 +7,10 @@ import (
 
 func TestDAGStructureWithSharedNodes(t *testing.T) {
 	// Set up dimension configs for the test
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigs()
+	dimensionConfigs.Add(NewDimensionConfig("product", 0, true))
+	dimensionConfigs.Add(NewDimensionConfig("route", 1, false))
+	dimensionConfigs.Add(NewDimensionConfig("tool", 2, false))
 
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -19,28 +18,28 @@ func TestDAGStructureWithSharedNodes(t *testing.T) {
 	// These rules share some dimensions but have different match types
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypePrefix}, // Prefix match
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypePrefix}, // Prefix match
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual}, // Exact match - different from rule1
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual}, // Exact match - different from rule1
 		},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeSuffix}, // Suffix match
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeSuffix}, // Suffix match
 		},
 	}
 	// Add all rules
@@ -153,10 +152,9 @@ func TestDAGStructureWithSharedNodes(t *testing.T) {
 
 func TestDAGStatistics(t *testing.T) {
 	// Set up dimension configs for the test
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, true),
-		"tool":    NewDimensionConfig("tool", 1, false),
-	}
+	dimensionConfigs := NewDimensionConfigs()
+	dimensionConfigs.Add(NewDimensionConfig("product", 0, true))
+	dimensionConfigs.Add(NewDimensionConfig("tool", 1, false))
 
 	forest := CreateRuleForest(dimensionConfigs)
 
@@ -165,9 +163,9 @@ func TestDAGStatistics(t *testing.T) {
 		for _, matchType := range []MatchType{MatchTypeEqual, MatchTypePrefix, MatchTypeSuffix} {
 			rule := &Rule{
 				ID: fmt.Sprintf("rule_%d_%s", i, matchType.String()),
-				Dimensions: []*DimensionValue{
-					{DimensionName: "product", Value: "CommonProduct", MatchType: MatchTypeEqual},
-					{DimensionName: "tool", Value: "shared_tool", MatchType: matchType},
+				Dimensions: map[string]*DimensionValue{
+					"product": {DimensionName: "product", Value: "CommonProduct", MatchType: MatchTypeEqual},
+					"tool":    {DimensionName: "tool", Value: "shared_tool", MatchType: matchType},
 				},
 			}
 			forest.AddRule(rule)

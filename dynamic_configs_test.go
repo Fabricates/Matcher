@@ -95,15 +95,16 @@ func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
 	dynamicEnvConfig.SetWeight(MatchTypeEqual, 25.0)
 	dynamicEnvConfig.SetWeight(MatchTypeAny, 5.0)
 
+	dynamicConfigs := NewDimensionConfigs()
+	dynamicConfigs.Add(dynamicRegionConfig)
+	dynamicConfigs.Add(dynamicEnvConfig)
+
 	query2 := &QueryRule{
 		Values: map[string]string{
 			"region": "us-west",
 			"env":    "prod",
 		},
-		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"region": dynamicRegionConfig,
-			"env":    dynamicEnvConfig,
-		},
+		DynamicDimensionConfigs: dynamicConfigs,
 	}
 
 	matches2, err := engine.FindAllMatches(query2)
@@ -133,15 +134,16 @@ func TestDynamicDimensionConfigsWithMatchTypes(t *testing.T) {
 	partialDynamicConfig.SetWeight(MatchTypeEqual, 100.0) // Very high weight for exact matches
 	partialDynamicConfig.SetWeight(MatchTypePrefix, 60.0)
 
+	partialDynamicConfigs := NewDimensionConfigs()
+	partialDynamicConfigs.Add(partialDynamicConfig)
+	// env will use the default config (not included in dynamic configs)
+
 	query3 := &QueryRule{
 		Values: map[string]string{
 			"region": "us-west",
 			"env":    "prod",
 		},
-		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"region": partialDynamicConfig,
-			// env will use the default config
-		},
+		DynamicDimensionConfigs: partialDynamicConfigs,
 	}
 
 	matches3, err := engine.FindAllMatches(query3)
@@ -248,12 +250,13 @@ func TestDynamicConfigsWithComplexMatchTypes(t *testing.T) {
 	dynamicCategoryConfig.SetWeight(MatchTypeEqual, 30.0)
 	dynamicCategoryConfig.SetWeight(MatchTypeAny, 10.0)
 
+	dynamicConfigs2 := NewDimensionConfigs()
+	dynamicConfigs2.Add(dynamicPriorityConfig)
+	dynamicConfigs2.Add(dynamicCategoryConfig)
+
 	query := &QueryRule{
-		Values: baseQuery,
-		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"priority": dynamicPriorityConfig,
-			"category": dynamicCategoryConfig,
-		},
+		Values:                  baseQuery,
+		DynamicDimensionConfigs: dynamicConfigs2,
 	}
 
 	matches, err := engine.FindAllMatches(query)
@@ -394,21 +397,22 @@ func TestDynamicConfigsWithMultipleMatchTypes(t *testing.T) {
 	t.Logf("Prefix/suffix match rule weight: %f", matches[1].TotalWeight)
 
 	// Test with dynamic configs that reverse the priority
+	dynamicConfigs3 := NewDimensionConfigs()
+	dynamicConfigs3.Add(NewDimensionConfigWithWeights("priority", 0, true, map[MatchType]float64{
+		MatchTypeEqual:  2.0,  // lower weight for exact
+		MatchTypePrefix: 20.0, // much higher weight for prefix
+	}))
+	dynamicConfigs3.Add(NewDimensionConfigWithWeights("category", 1, true, map[MatchType]float64{
+		MatchTypeEqual:  3.0,  // lower weight for exact
+		MatchTypeSuffix: 15.0, // higher weight for suffix
+	}))
+
 	dynamicQuery := &QueryRule{
 		Values: map[string]string{
 			"priority": "high",
 			"category": "urgent",
 		},
-		DynamicDimensionConfigs: map[string]*DimensionConfig{
-			"priority": NewDimensionConfigWithWeights("priority", 0, true, map[MatchType]float64{
-				MatchTypeEqual:  2.0,  // lower weight for exact
-				MatchTypePrefix: 20.0, // much higher weight for prefix
-			}),
-			"category": NewDimensionConfigWithWeights("category", 1, true, map[MatchType]float64{
-				MatchTypeEqual:  3.0,  // lower weight for exact
-				MatchTypeSuffix: 15.0, // higher weight for suffix
-			}),
-		},
+		DynamicDimensionConfigs: dynamicConfigs3,
 	}
 
 	dynamicMatches, err := engine.FindAllMatches(dynamicQuery)

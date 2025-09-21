@@ -30,17 +30,23 @@ func main() {
 	if err := engine.AddDimension(productDim); err != nil {
 		log.Fatalf("Failed to add product dimension: %v", err)
 	}
-	fmt.Printf("   Added dimension 'product' with weight %.1f\n", productDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := productDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   Added dimension 'product' with weight %.1f\n", weight)
+	}
 
 	if err := engine.AddDimension(environmentDim); err != nil {
 		log.Fatalf("Failed to add environment dimension: %v", err)
 	}
-	fmt.Printf("   Added dimension 'environment' with weight %.1f\n", environmentDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := environmentDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   Added dimension 'environment' with weight %.1f\n", weight)
+	}
 
 	if err := engine.AddDimension(regionDim); err != nil {
 		log.Fatalf("Failed to add region dimension: %v", err)
 	}
-	fmt.Printf("   Added dimension 'region' with weight %.1f\n", regionDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := regionDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   Added dimension 'region' with weight %.1f\n", weight)
+	}
 
 	fmt.Println()
 
@@ -89,37 +95,52 @@ func main() {
 	fmt.Println("3. Verifying automatic weight population...")
 
 	// Create dimension configs map for weight calculation
-	dimensionConfigs := map[string]*matcher.DimensionConfig{
-		"product":     productDim,
-		"environment": environmentDim,
-		"region":      regionDim,
+	dimensionConfigsMap := []*matcher.DimensionConfig{
+		productDim,
+		environmentDim,
+		regionDim,
 	}
+	dimensionConfigs := matcher.NewDimensionConfigsWithDimensionsAndSorter(dimensionConfigsMap, nil)
 
 	// Check rule1
 	fmt.Printf("Rule 1 ('%s'):\n", rule1.ID)
-	fmt.Printf("   product dimension weight: %.1f (from config)\n", productDim.GetWeight(matcher.MatchTypeEqual))
-	fmt.Printf("   environment dimension weight: %.1f (from config)\n", environmentDim.GetWeight(matcher.MatchTypeEqual))
-	fmt.Printf("   region dimension weight: %.1f (from config)\n", regionDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := productDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   product dimension weight: %.1f (from config)\n", weight)
+	}
+	if weight, _ := environmentDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   environment dimension weight: %.1f (from config)\n", weight)
+	}
+	if weight, _ := regionDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   region dimension weight: %.1f (from config)\n", weight)
+	}
 	fmt.Printf("   Total calculated weight: %.1f\n", rule1.CalculateTotalWeight(dimensionConfigs))
 	fmt.Println()
 
 	// Check rule2
 	fmt.Printf("Rule 2 ('%s'):\n", rule2.ID)
-	fmt.Printf("   product dimension weight: %.1f (from config)\n", productDim.GetWeight(matcher.MatchTypeEqual))
-	fmt.Printf("   environment dimension weight: %.1f (from config)\n", environmentDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := productDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   product dimension weight: %.1f (from config)\n", weight)
+	}
+	if weight, _ := environmentDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   environment dimension weight: %.1f (from config)\n", weight)
+	}
 	fmt.Printf("   Total calculated weight: %.1f\n", rule2.CalculateTotalWeight(dimensionConfigs))
 	fmt.Println()
 
 	// Check rule3 (mixed)
 	fmt.Printf("Rule 3 ('%s') - Mixed approach:\n", rule3.ID)
-	fmt.Printf("   product dimension weight: %.1f (from config)\n", productDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := productDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   product dimension weight: %.1f (from config)\n", weight)
+	}
 	fmt.Printf("   environment dimension weight: %.1f (explicit override via ManualWeight)\n", *rule3.ManualWeight)
 	fmt.Printf("   Total calculated weight: %.1f\n", rule3.CalculateTotalWeight(dimensionConfigs))
 	fmt.Println()
 
 	// Check rule4 (single dimension)
 	fmt.Printf("Rule 4 ('%s') - Single dimension:\n", rule4.ID)
-	fmt.Printf("   product dimension weight: %.1f (from config)\n", productDim.GetWeight(matcher.MatchTypeEqual))
+	if weight, _ := productDim.GetWeight(matcher.MatchTypeEqual); true {
+		fmt.Printf("   product dimension weight: %.1f (from config)\n", weight)
+	}
 	fmt.Printf("   Total calculated weight: %.1f\n", rule4.CalculateTotalWeight(dimensionConfigs))
 	fmt.Println()
 
@@ -176,7 +197,8 @@ func main() {
 	// For rules without dimension configs, they use default weight of 1.0
 	fmt.Printf("   any_dimension weight: %.1f (default)\n", 1.0)
 	fmt.Printf("   another_dimension weight: %.1f (default)\n", 1.0)
-	fmt.Printf("   Total weight: %.1f\n", flexibleRule.CalculateTotalWeight(make(map[string]*matcher.DimensionConfig)))
+	emptyDimensionConfigs := matcher.NewDimensionConfigs() // Empty dimension configs for rules without config
+	fmt.Printf("   Total weight: %.1f\n", flexibleRule.CalculateTotalWeight(emptyDimensionConfigs))
 
 	fmt.Println()
 	fmt.Println("The weight parameter in RuleBuilder.Dimension() method is no longer necessary!")

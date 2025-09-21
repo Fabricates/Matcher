@@ -2,23 +2,22 @@ package matcher
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 )
 
-const snapshotFileName = "snapshot.json"
+const snapshotFileName = "snapshot" // .graph, .cache, .mapping
 
 // InMemoryMatcher implements the core matching logic using forest indexes
 type InMemoryMatcher struct {
 	forestIndexes         map[string]*ForestIndex     // tenant_app_key -> ForestIndex
-	dimensionConfigs      map[string]*DimensionConfig // dimension_name -> config (global or scoped)
+	dimensionConfigs      *DimensionConfigs           // Managed dimension configurations
 	rules                 map[string]*Rule            // rule_id -> rule
 	tenantRules           map[string]map[string]*Rule // tenant_app_key -> rule_id -> rule
 	stats                 *MatcherStats
@@ -34,23 +33,32 @@ type InMemoryMatcher struct {
 	snapshotChanged       int64 // atomic flag to indicate if snapshot needs to be updated
 }
 
-// CreateInMemoryMatcher creates an in-memory matcher
+// NewInMemoryMatcher creates an in-memory matcher
 func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID)
+	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
 }
 
 // NewInMemoryMatcherWithContext creates an in-memory matcher with a custom context for timeout handling
 func NewInMemoryMatcherWithContext(ctx context.Context, persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID)
+	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
+}
+
+// NewInMemoryMatcherWithDimensions creates an in-memory matcher
+func NewInMemoryMatcherWithDimensions(persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs) (*InMemoryMatcher, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
 }
 
 // newInMemoryMatcherWithContext is a private helper that creates an in-memory matcher with the provided context
-func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFunc, persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
+func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFunc, persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs) (*InMemoryMatcher, error) {
+	if dcs == nil {
+		dcs = NewDimensionConfigs() // Initialize managed dimension configurations
+	}
 	matcher := &InMemoryMatcher{
 		forestIndexes:    make(map[string]*ForestIndex),
-		dimensionConfigs: make(map[string]*DimensionConfig),
+		dimensionConfigs: dcs,
 		rules:            make(map[string]*Rule),
 		tenantRules:      make(map[string]map[string]*Rule),
 		stats: &MatcherStats{
@@ -83,13 +91,16 @@ func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFun
 	// Start snapshot monitoring
 	matcher.startSnapshotMonitor()
 
+	// Schedule the first snapshot dump
+	atomic.StoreInt64(&matcher.snapshotChanged, 1)
+
 	return matcher, nil
 }
 
 // startSnapshotMonitor starts a goroutine that monitors for snapshot changes
 func (m *InMemoryMatcher) startSnapshotMonitor() {
 	// Skip snapshot monitoring for test environments
-	if strings.Contains(m.nodeID, "test") {
+	if testing.Testing() {
 		slog.Info("Snapshot monitor skipped for test environment", "node_id", m.nodeID)
 		return
 	}
@@ -110,8 +121,10 @@ func (m *InMemoryMatcher) startSnapshotMonitor() {
 					slog.Info("Snapshot change detected, dumping snapshot")
 					if err := m.dumpSnapshot(); err != nil {
 						slog.Error("Failed to dump snapshot", "error", err)
+					} else {
+						slog.Info("Snapshot dump complete, check snapshot.*.")
 					}
-				} else if st, err := os.Stat(snapshotFileName); err != nil || st.Size() <= 0 {
+				} else if st, err := os.Stat(snapshotFileName + ".graph"); err != nil || st.Size() <= 0 {
 					// First time snapshot generation
 					slog.Info("No snapshot file found, triggering initial snapshot")
 					atomic.CompareAndSwapInt64(&m.snapshotChanged, 0, 1)
@@ -126,27 +139,16 @@ func (m *InMemoryMatcher) dumpSnapshot() error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Create snapshot data directly from current state
-	snapshotData := map[string]interface{}{
-		"forest_indexes":    m.forestIndexes,
-		"dimension_configs": m.dimensionConfigs,
-		"rules":             m.rules,
-		"tenant_rules":      m.tenantRules,
-		"stats":             m.stats,
-		"node_id":           m.nodeID,
-		"timestamp":         time.Now(),
+	// Dump cache as key-value pairs
+	if err := DumpCacheToFile(m.cache, snapshotFileName); err != nil {
+		return fmt.Errorf("failed to dump cache: %w", err)
 	}
 
-	data, err := json.Marshal(snapshotData)
-	if err != nil {
-		return fmt.Errorf("failed to marshal snapshot: %w", err)
+	// Dump forest in concise graph format
+	if err := DumpForestToFile(m, snapshotFileName); err != nil {
+		return fmt.Errorf("failed to dump forest: %w", err)
 	}
 
-	if err := os.WriteFile("snapshot.json", data, 0644); err != nil {
-		return fmt.Errorf("failed to write snapshot file: %w", err)
-	}
-
-	slog.Info("Snapshot dumped successfully", "file", "snapshot.json", "size", len(data))
 	return nil
 }
 
@@ -196,10 +198,11 @@ func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
 		return fmt.Errorf("failed to load dimension configs: %w", err)
 	}
 
-	// Initialize dimensions
+	// Load all dimensions at once and sort only once (performance optimization)
+	m.dimensionConfigs.LoadBulk(configs)
+
+	// Initialize dimensions in forest indexes after bulk loading
 	for _, config := range configs {
-		m.dimensionConfigs[config.Name] = config
-		// Initialize dimensions for the appropriate tenant/application forest
 		forestIndex := m.getOrCreateForestIndex(config.TenantID, config.ApplicationID)
 		forestIndex.InitializeDimension(config.Name)
 	}
@@ -221,14 +224,17 @@ func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
 
 		// Add to appropriate forest index
 		forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
-		r := forestIndex.AddRule(rule)
+		r, err := forestIndex.AddRule(rule)
+		if err != nil {
+			return err
+		}
 		if r != nil {
 			m.rules[rule.ID] = r
 		}
 	}
 
 	m.stats.TotalRules = len(m.rules)
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	m.stats.TotalDimensions = m.dimensionConfigs.Count()
 
 	return nil
 }
@@ -338,7 +344,10 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	forestIndex := m.getOrCreateForestIndex(rule.TenantID, rule.ApplicationID)
 
 	// Add to internal structures
-	r := forestIndex.AddRule(rule)
+	r, err := forestIndex.AddRule(rule)
+	if err != nil {
+		return err
+	}
 	if r != nil {
 		m.rules[rule.ID] = r
 	}
@@ -418,13 +427,28 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	// ATOMIC UPDATE STRATEGY: With write lock held, perform all operations sequentially
 	// This ensures no concurrent FindAllMatches can see partial state
 
-	// Step 1: Remove old rule from forest first to prevent double-matching
-	if oldForestIndex != nil {
-		oldForestIndex.RemoveRule(oldRule)
+	// Step 1 & 2: Use atomic ReplaceRule to prevent intermediate states
+	var r *Rule
+	var err error
+	if oldForestIndex != nil && forestIndex != nil && oldKey == key {
+		// Same tenant/app - use atomic replace
+		// DEBUG: This should be the path taken for the atomic test
+		err = forestIndex.ReplaceRule(oldRule, rule)
+		if err != nil {
+			return err
+		}
+		r = rule
+	} else {
+		// Different tenant/app - remove from old, add to new
+		// DEBUG: If this path is taken, the atomic test will fail
+		if oldForestIndex != nil {
+			oldForestIndex.RemoveRule(oldRule)
+		}
+		r, err = forestIndex.AddRule(rule)
+		if err != nil {
+			return err
+		}
 	}
-
-	// Step 2: Add new rule to forest
-	r := forestIndex.AddRule(rule)
 	// Step 3: Update m.rules immediately - this is now the authoritative source
 	if r != nil {
 		m.rules[rule.ID] = r
@@ -532,14 +556,14 @@ func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
 	}
 
 	// Add to configurations
-	m.dimensionConfigs[config.Name] = config
+	m.dimensionConfigs.Add(config)
 
 	// Initialize forest for this dimension in appropriate tenant/application context
 	forestIndex := m.getOrCreateForestIndex(config.TenantID, config.ApplicationID)
 	forestIndex.InitializeDimension(config.Name)
 
 	// Update stats
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	m.stats.TotalDimensions = m.dimensionConfigs.Count()
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue
@@ -563,16 +587,13 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Get the dimension config before deleting it for the event
-	config, exists := m.dimensionConfigs[dimensionName]
-
-	delete(m.dimensionConfigs, dimensionName)
+	exists := m.dimensionConfigs.Remove(dimensionName)
 
 	// Note: We don't remove the forest here as it might still contain rules
 	// In production, you might want to handle this more carefully
 
 	// Update stats
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	m.stats.TotalDimensions = m.dimensionConfigs.Count()
 	m.stats.LastUpdated = time.Now()
 
 	// Publish event to message queue if dimension existed
@@ -582,7 +603,9 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 			Timestamp: time.Now(),
 			NodeID:    m.nodeID,
 			Data: &DimensionEvent{
-				Dimension: config,
+				Dimension: &DimensionConfig{
+					Name: dimensionName,
+				},
 			},
 		}
 		go m.publishEvent(event) // Publish asynchronously
@@ -693,15 +716,8 @@ func (m *InMemoryMatcher) dimensionsEqual(rule1, rule2 *Rule) bool {
 	}
 
 	// Create maps for comparison
-	dims1 := make(map[string]*DimensionValue)
-	dims2 := make(map[string]*DimensionValue)
-
-	for _, dim := range rule1.Dimensions {
-		dims1[dim.DimensionName] = dim
-	}
-	for _, dim := range rule2.Dimensions {
-		dims2[dim.DimensionName] = dim
-	}
+	dims1 := rule1.Dimensions
+	dims2 := rule2.Dimensions
 
 	if len(dims1) != len(dims2) {
 		return false
@@ -729,7 +745,7 @@ func (m *InMemoryMatcher) isFullMatch(rule *Rule, query *QueryRule) bool {
 		queryValue, hasQueryValue := query.Values[dimValue.DimensionName]
 
 		// If dimension is required but not in query, no match
-		if dimConfig, exists := m.dimensionConfigs[dimValue.DimensionName]; exists && dimConfig.Required && !hasQueryValue {
+		if m.dimensionConfigs.IsRequired(dimValue.DimensionName) && !hasQueryValue {
 			return false
 		}
 
@@ -815,7 +831,7 @@ func (m *InMemoryMatcher) validateRule(rule *Rule) error {
 // validateDimensionConsistency ensures rule dimensions match the configured dimensions
 func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 	// Check if any dimensions are configured
-	if len(m.dimensionConfigs) == 0 {
+	if m.dimensionConfigs.Count() == 0 {
 		// If no dimensions configured, allow any dimensions (for backward compatibility)
 		return nil
 	}
@@ -827,16 +843,16 @@ func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 	}
 
 	// Check all configured dimensions
-	for _, configDim := range m.dimensionConfigs {
-		_, exists := ruleDimensions[configDim.Name]
+	for _, dim := range m.dimensionConfigs.GetSortedNames() {
+		_, exists := ruleDimensions[dim]
 
-		if configDim.Required && !exists {
-			return fmt.Errorf("rule missing required dimension '%s'", configDim.Name)
+		if m.dimensionConfigs.IsRequired(dim) && !exists {
+			return fmt.Errorf("rule missing required dimension '%s'", dim)
 		}
 
 		if exists {
 			// Remove from map to track processed dimensions
-			delete(ruleDimensions, configDim.Name)
+			delete(ruleDimensions, dim)
 		}
 	}
 
@@ -896,7 +912,7 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 }
 
 // validateRuleForRebuild validates a rule during rebuild with provided dimension configs
-func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs map[string]*DimensionConfig) error {
+func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs *DimensionConfigs) error {
 	if rule.ID == "" {
 		return fmt.Errorf("rule ID cannot be empty")
 	}
@@ -922,9 +938,9 @@ func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs ma
 }
 
 // validateDimensionConsistencyWithConfigs validates dimensions against provided configs
-func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, dimensionConfigs map[string]*DimensionConfig) error {
+func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, dimensionConfigs *DimensionConfigs) error {
 	// Check if any dimensions are configured
-	if len(dimensionConfigs) == 0 {
+	if dimensionConfigs.Count() == 0 {
 		// If no dimensions configured, allow any dimensions (for backward compatibility)
 		return nil
 	}
@@ -936,16 +952,16 @@ func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, di
 	}
 
 	// Check all configured dimensions
-	for _, configDim := range dimensionConfigs {
-		_, exists := ruleDimensions[configDim.Name]
+	for _, configDim := range dimensionConfigs.GetSortedNames() {
+		_, exists := ruleDimensions[configDim]
 
-		if configDim.Required && !exists {
-			return fmt.Errorf("rule missing required dimension '%s'", configDim.Name)
+		if dimensionConfigs.IsRequired(configDim) && !exists {
+			return fmt.Errorf("rule missing required dimension '%s'", configDim)
 		}
 
 		if exists {
 			// Remove from map to track processed dimensions
-			delete(ruleDimensions, configDim.Name)
+			delete(ruleDimensions, configDim)
 		}
 	}
 
@@ -1007,15 +1023,7 @@ func (m *InMemoryMatcher) ListDimensions() ([]*DimensionConfig, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var configs []*DimensionConfig
-	for _, config := range m.dimensionConfigs {
-		configs = append(configs, config)
-	}
-
-	// Sort by index
-	sort.Slice(configs, func(i, j int) bool {
-		return configs[i].Index < configs[j].Index
-	})
+	configs := m.dimensionConfigs.CloneSorted()
 
 	return configs, nil
 }
@@ -1046,10 +1054,7 @@ func (m *InMemoryMatcher) SaveToPersistence() error {
 	}
 
 	// Save dimension configurations
-	var configs []*DimensionConfig
-	for _, config := range m.dimensionConfigs {
-		configs = append(configs, config)
-	}
+	configs := m.dimensionConfigs.CloneSorted()
 
 	if err := m.persistence.SaveDimensionConfigs(m.ctx, configs); err != nil {
 		return fmt.Errorf("failed to save dimension configs: %w", err)
@@ -1076,7 +1081,7 @@ func (m *InMemoryMatcher) Rebuild() error {
 
 	// Create new structures for atomic replacement
 	newForestIndexes := make(map[string]*ForestIndex)
-	newDimensionConfigs := make(map[string]*DimensionConfig)
+	newDimensionConfigs := NewDimensionConfigs() // Use new instance for managed dimensions
 	newRules := make(map[string]*Rule)
 	newTenantRules := make(map[string]map[string]*Rule)
 
@@ -1086,10 +1091,10 @@ func (m *InMemoryMatcher) Rebuild() error {
 		return fmt.Errorf("failed to load dimension configs during rebuild: %w", err)
 	}
 
+	newDimensionConfigs.LoadBulk(configs)
+
 	// Initialize dimensions in appropriate forests
 	for _, config := range configs {
-		newDimensionConfigs[config.Name] = config
-
 		// Get or create forest for this tenant/application
 		key := m.getTenantKey(config.TenantID, config.ApplicationID)
 		if newForestIndexes[key] == nil {
@@ -1124,7 +1129,10 @@ func (m *InMemoryMatcher) Rebuild() error {
 			newForest := CreateRuleForestWithTenant(rule.TenantID, rule.ApplicationID, m.dimensionConfigs)
 			newForestIndexes[key] = &ForestIndex{RuleForest: newForest}
 		}
-		r := newForestIndexes[key].AddRule(rule)
+		r, err := newForestIndexes[key].AddRule(rule)
+		if err != nil {
+			return err
+		}
 		if r != nil {
 			newRules[rule.ID] = r
 		}
@@ -1139,7 +1147,7 @@ func (m *InMemoryMatcher) Rebuild() error {
 
 	// Update stats
 	m.stats.TotalRules = len(m.rules)
-	m.stats.TotalDimensions = len(m.dimensionConfigs)
+	m.stats.TotalDimensions = m.dimensionConfigs.Count()
 	m.stats.LastUpdated = time.Now()
 
 	// Signal that snapshot needs to be updated

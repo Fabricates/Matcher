@@ -6,38 +6,38 @@ import (
 
 func TestRuleForestDimensionOrder(t *testing.T) {
 	// Define dimension order
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, false),
-		"route":   NewDimensionConfig("route", 1, false),
-		"tool":    NewDimensionConfig("tool", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, false),
+		NewDimensionConfig("route", 1, false),
+		NewDimensionConfig("tool", 2, false),
+	}, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create test rules
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeAny}, // Changed to MatchTypeAny for partial query testing
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeAny}, // Changed to MatchTypeAny for partial query testing
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "alt", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "drill", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule3 := &Rule{
 		ID: "rule3",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductB", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductB", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
@@ -109,7 +109,7 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 
 	// Should have 2 root nodes (ProductA and ProductB)
 	if stats["total_root_nodes"].(int) != 2 {
-		t.Errorf("Expected 2 root nodes, got %d", stats["total_root_nodes"].(int))
+		t.Errorf("Expected 2 root nodes(equal type), got %d", stats["total_root_nodes"].(int))
 	}
 
 	// Should have 3 total rules
@@ -120,20 +120,20 @@ func TestRuleForestDimensionOrder(t *testing.T) {
 
 func TestRuleForestDimensionTraversal(t *testing.T) {
 	// Define dimension order
-	dimensionConfigs := map[string]*DimensionConfig{
-		"A": NewDimensionConfig("A", 0, false),
-		"B": NewDimensionConfig("B", 1, false),
-		"C": NewDimensionConfig("C", 2, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("A", 0, false),
+		NewDimensionConfig("B", 1, false),
+		NewDimensionConfig("C", 2, false),
+	}, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Create a rule that uses all dimensions
 	rule := &Rule{
 		ID: "test_rule",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "A", Value: "a1", MatchType: MatchTypeEqual},
-			{DimensionName: "B", Value: "b1", MatchType: MatchTypeEqual},
-			{DimensionName: "C", Value: "c1", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"A": {DimensionName: "A", Value: "a1", MatchType: MatchTypeEqual},
+			"B": {DimensionName: "B", Value: "b1", MatchType: MatchTypeEqual},
+			"C": {DimensionName: "C", Value: "c1", MatchType: MatchTypeEqual},
 		},
 	}
 
@@ -183,28 +183,28 @@ func TestRuleForestDimensionTraversal(t *testing.T) {
 
 func TestRuleForestSharedPaths(t *testing.T) {
 	// Test that the forest can handle shared paths between different rules
-	dimensionConfigs := map[string]*DimensionConfig{
-		"product": NewDimensionConfig("product", 0, false),
-		"region":  NewDimensionConfig("region", 1, false),
-	}
+	dimensionConfigs := NewDimensionConfigsWithDimensionsAndSorter([]*DimensionConfig{
+		NewDimensionConfig("product", 0, false),
+		NewDimensionConfig("region", 1, false),
+	}, nil)
 	forest := CreateRuleForest(dimensionConfigs)
 
 	// Two rules that share the same path but different match types
 	rule1 := &Rule{
 		ID: "rule1",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeEqual},
 		},
 	}
 
 	rule2 := &Rule{
 		ID: "rule2",
-		Dimensions: []*DimensionValue{
-			{DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
-			{DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
-			{DimensionName: "tool", Value: "laser", MatchType: MatchTypeAny}, // Different match type
+		Dimensions: map[string]*DimensionValue{
+			"product": {DimensionName: "product", Value: "ProductA", MatchType: MatchTypeEqual},
+			"route":   {DimensionName: "route", Value: "main", MatchType: MatchTypeEqual},
+			"tool":    {DimensionName: "tool", Value: "laser", MatchType: MatchTypeAny},
 		},
 	}
 
