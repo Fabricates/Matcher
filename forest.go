@@ -210,7 +210,8 @@ func (rf *RuleForest) AddRule(rule *Rule) (*Rule, error) {
 			indexKey := firstDim.DimensionName + ":" + firstDim.Value
 			rf.EqualTreesIndex[indexKey] = rootNode
 			if len(rf.Trees[firstDim.MatchType]) <= 0 {
-				// Append an empty node, check {findCandidateRulesWithQuery}
+				// Append an empty node as a placeholder to maintain index alignment for MatchTypeEqual.
+				// This is required for legacy compatibility: some matching logic expects at least one node in the slice.
 				rf.Trees[firstDim.MatchType] = append(rf.Trees[firstDim.MatchType], &SharedNode{})
 			}
 		} else {
