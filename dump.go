@@ -136,7 +136,7 @@ func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 		// Tenant header
 		graphLines = append(graphLines, fmt.Sprintf("# Tenant: %s", tenantKey))
 		mappingLines = append(mappingLines, fmt.Sprintf("# Tenant: %s", tenantKey))
-		graphs, relationship := make(map[string]bool), ""
+		graphs, relationship := make(map[string]any), ""
 
 		// Snapshot NodeRelationships under forest lock
 		forest.mu.RLock()
@@ -145,6 +145,7 @@ func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 			for rid, next := range trans {
 				relationship = fmt.Sprintf("%s %s", current, next)
 				if _, ok := graphs[relationship]; !ok {
+					graphs[relationship] = nil
 					graphLines = append(graphLines, relationship)
 				}
 				b.WriteString(rid)
