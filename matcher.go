@@ -70,7 +70,7 @@ func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFun
 		eventsChan:      make(chan *Event, 100),
 		nodeID:          nodeID,
 		snapshotChanged: 0, // Initialize atomic flag to 1 (no changes)
-		ctx:             ctx,
+		ctx:             context.Background(),
 		cancel:          cancel,
 	}
 
