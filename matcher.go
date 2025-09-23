@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const snapshotFileName = "snapshot" // .graph, .cache, .mapping
+const snapshotFileName = "snapshot" // .mermaid, .cache
 
 // InMemoryMatcher implements the core matching logic using forest indexes
 type InMemoryMatcher struct {
@@ -124,7 +124,7 @@ func (m *InMemoryMatcher) startSnapshotMonitor() {
 					} else {
 						slog.Info("Snapshot dump complete, check snapshot.*.")
 					}
-				} else if st, err := os.Stat(snapshotFileName + ".graph"); err != nil || st.Size() <= 0 {
+				} else if st, err := os.Stat(snapshotFileName + ".mermaid"); err != nil || st.Size() <= 0 {
 					// First time snapshot generation
 					slog.Info("No snapshot file found, triggering initial snapshot")
 					atomic.CompareAndSwapInt64(&m.snapshotChanged, 0, 1)

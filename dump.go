@@ -108,8 +108,7 @@ func dumpMultiLevelCacheToFile(cache *MultiLevelCache, filename string) error {
 // DumpForestToFile dumps the forest in concise graph format to a file
 func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 	// We'll produce two files per requested filename:
-	//  - <filename>.graph   : concise graph listing edges between node keys (dimension|value+match)
-	//  - <filename>.mapping : mapping of node_key -> comma-separated rule IDs (for lookup)
+	//  - <filename>.mermaid : concise graph listing edges between node keys (dimension#value+match)
 
 	m.mu.RLock()
 	// Snapshot the forestIndexes keys to avoid holding matcher lock while writing files
@@ -134,8 +133,6 @@ func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 		forest := forestIndex.RuleForest
 
 		// Tenant header
-		graphLines = append(graphLines, fmt.Sprintf("# Tenant: %s", tenantKey))
-		mappingLines = append(mappingLines, fmt.Sprintf("# Tenant: %s", tenantKey))
 		graphs, relationship := make(map[string]any), ""
 
 		// Snapshot NodeRelationships under forest lock
@@ -143,15 +140,20 @@ func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 		for current, trans := range forest.NodeRelationships {
 			b := strings.Builder{}
 			for rid, next := range trans {
-				relationship = fmt.Sprintf("%s %s", current, next)
-				if _, ok := graphs[relationship]; !ok {
-					graphs[relationship] = nil
-					graphLines = append(graphLines, relationship)
+				if next != "" {
+					// Not the last node
+					relationship = fmt.Sprintf("    %s --> %s", current, next)
+					if _, ok := graphs[relationship]; !ok {
+						graphs[relationship] = nil
+						graphLines = append(graphLines, relationship)
+					}
+				}
+				if b.Len() > 0 {
+					b.WriteString(",")
 				}
 				b.WriteString(rid)
-				b.WriteString(",")
 			}
-			mappingLines = append(mappingLines, fmt.Sprintf("%s %s", current, b.String()))
+			mappingLines = append(mappingLines, fmt.Sprintf("    %s[%s<%s>]", current, current, b.String()))
 		}
 		forest.mu.RUnlock()
 
@@ -161,15 +163,12 @@ func DumpForestToFile(m *InMemoryMatcher, filename string) error {
 	}
 
 	// Write graph file
-	graphFile := filename + ".graph"
-	if err := os.WriteFile(graphFile, []byte(strings.Join(graphLines, "\n")), 0644); err != nil {
+	graphFile := filename + ".mermaid"
+	graph := append([]string{}, "flowchart TD")
+	graph = append(graph, mappingLines...)
+	graph = append(graph, graphLines...)
+	if err := os.WriteFile(graphFile, []byte(strings.Join(graph, "\n")), 0644); err != nil {
 		return fmt.Errorf("failed to write forest graph file: %w", err)
-	}
-
-	// Write mapping file
-	mappingFile := filename + ".mapping"
-	if err := os.WriteFile(mappingFile, []byte(strings.Join(mappingLines, "\n")), 0644); err != nil {
-		return fmt.Errorf("failed to write forest mapping file: %w", err)
 	}
 
 	return nil

@@ -129,20 +129,16 @@ func CreateForestIndexCompat() *RuleForest {
 
 // generateNodeName generates a unique node name in the pattern 'dimension|value+match_type'
 func generateNodeName(dimensionName, value string, matchType MatchType) string {
-	var matchTypeStr string
 	switch matchType {
 	case MatchTypeEqual:
-		matchTypeStr = ""
 	case MatchTypeAny:
-		matchTypeStr = "*"
+		value = "*"
 	case MatchTypePrefix:
-		matchTypeStr = "*"
 		value = value + "*"
 	case MatchTypeSuffix:
-		matchTypeStr = "*"
 		value = "*" + value
 	}
-	return fmt.Sprintf("%s|%s%s", dimensionName, value, matchTypeStr)
+	return fmt.Sprintf("%s#%s", dimensionName, value)
 }
 
 // cleanupNodeRelationshipsForRule removes relationships for a specific rule from a specific node's relationships.
@@ -223,55 +219,54 @@ func (rf *RuleForest) AddRule(rule *Rule) (*Rule, error) {
 	ruleNodes = append(ruleNodes, rootNode)
 
 	// Track parent node for relationship building
-	var parentNodeName string
+	var parentNodeName, childNodeName string
 
 	// Traverse/create path for remaining dimensions
-	current := rootNode
+	parent := rootNode
+	parentDim := firstDim
+	parentNodeName = generateNodeName(parent.DimensionName, parent.Value, parentDim.MatchType)
 	for i := 1; i < len(sorted); i++ {
-		dim := completeRule.GetDimensionValue(sorted[i])
+		currentDim := completeRule.GetDimensionValue(sorted[i])
 
 		// Use the original match type from the rule definition - do NOT change it
-		matchType := dim.MatchType
+		currentMatchType := currentDim.MatchType
 
 		// Get or create the match branch for the CURRENT dimension's match type
-		branch, exists := current.Branches[matchType]
+		branch, exists := parent.Branches[currentMatchType]
 		if !exists {
 			branch = &MatchBranch{
-				MatchType: matchType,
+				MatchType: currentMatchType,
 				Rules:     []*Rule{},
 				Children:  make(map[string]*SharedNode),
 			}
-			current.Branches[matchType] = branch
+			parent.Branches[currentMatchType] = branch
 		}
 
-		// Get or create child node for this dimension value within the match branch
-		child, exists := branch.Children[dim.Value]
+		// Get or create current node for this dimension value within the match branch
+		current, exists := branch.Children[currentDim.Value]
 		if !exists {
-			child = CreateSharedNode(i, dim.DimensionName, dim.Value)
-			branch.Children[dim.Value] = child
+			current = CreateSharedNode(i, currentDim.DimensionName, currentDim.Value)
+			branch.Children[currentDim.Value] = current
 
 			// MAINTAIN RELATIONSHIPS: Track parent-child relationship for efficient dumping
-			parentNodeName = generateNodeName(current.DimensionName, current.Value, dim.MatchType)
-			childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
-
-			// MAINTAIN NODE RELATIONSHIPS: Track rule transitions for efficient dumping
+			childNodeName = generateNodeName(current.DimensionName, current.Value, currentMatchType)
 			if rf.NodeRelationships[parentNodeName] == nil {
 				rf.NodeRelationships[parentNodeName] = make(map[string]string)
 			}
 			rf.NodeRelationships[parentNodeName][completeRule.ID] = childNodeName
 		} else {
 			// Even if child exists, still record the rule transition
-			parentNodeName = generateNodeName(current.DimensionName, current.Value, dim.MatchType)
-			childNodeName := generateNodeName(child.DimensionName, child.Value, matchType)
-
+			childNodeName = generateNodeName(current.DimensionName, current.Value, currentMatchType)
 			if rf.NodeRelationships[parentNodeName] == nil {
 				rf.NodeRelationships[parentNodeName] = make(map[string]string)
 			}
 			rf.NodeRelationships[parentNodeName][completeRule.ID] = childNodeName
 		}
 
-		ruleNodes = append(ruleNodes, child)
-		current = child
+		ruleNodes = append(ruleNodes, current)
+		parent = current
+		parentDim = currentDim
+		parentNodeName = generateNodeName(parent.DimensionName, parent.Value, parentDim.MatchType)
 	}
 
 	// Add rule to the final node (the node for the last dimension the rule specifies)
@@ -283,7 +278,12 @@ func (rf *RuleForest) AddRule(rule *Rule) (*Rule, error) {
 			finalMatchType = lastDim.MatchType
 		}
 	}
-	current.AddRule(completeRule, finalMatchType)
+	// Last dimension node
+	if _, ok := rf.NodeRelationships[childNodeName]; !ok {
+		rf.NodeRelationships[childNodeName] = make(map[string]string)
+	}
+	rf.NodeRelationships[childNodeName][completeRule.ID] = ""
+	parent.AddRule(completeRule, finalMatchType)
 
 	// Index the rule for quick removal
 	rf.RuleIndex[completeRule.ID] = ruleNodes
