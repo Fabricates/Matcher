@@ -1431,3 +1431,366 @@ func TestDeleteDimensionCoverage(t *testing.T) {
 		t.Logf("Rebuild failed (might be expected): %v", err)
 	}
 }
+
+func TestRuleBuilderMetadataIntegration(t *testing.T) {
+	// Integration test for rule builder with metadata functionality
+	rule := NewRule("metadata-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Metadata("key1", "value1").
+		Metadata("key2", "value2").
+		Build()
+
+	if rule.Metadata["key1"] != "value1" {
+		t.Errorf("Expected metadata key1=value1, got %s", rule.Metadata["key1"])
+	}
+	if rule.Metadata["key2"] != "value2" {
+		t.Errorf("Expected metadata key2=value2, got %s", rule.Metadata["key2"])
+	}
+}
+
+func TestMatcherEngineFullAPIIntegration(t *testing.T) {
+	// Integration test for complete MatcherEngine API workflow
+	tempDir, err := os.MkdirTemp("", "matcher-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	engine, err := NewMatcherEngineWithDefaults(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	defer engine.Close()
+
+	// Test ListRules
+	rules, err := engine.ListRules(0, 10)
+	if err != nil {
+		t.Errorf("ListRules failed: %v", err)
+	}
+	if rules == nil {
+		t.Error("ListRules returned nil")
+	}
+
+	// Test ListDimensions
+	_, err = engine.ListDimensions()
+	if err != nil {
+		t.Errorf("ListDimensions failed: %v", err)
+	}
+	// ListDimensions can return empty slice, which is valid	// Test Save
+	if err := engine.Save(); err != nil {
+		t.Errorf("Save failed: %v", err)
+	}
+
+	// Test Health
+	if err := engine.Health(); err != nil {
+		t.Errorf("Health failed: %v", err)
+	}
+
+	// Test GetForestStats
+	stats := engine.GetForestStats()
+	if stats == nil {
+		t.Error("GetForestStats returned nil")
+	}
+
+	// Test ClearCache
+	engine.ClearCache()
+
+	// Test GetCacheStats
+	cacheStats := engine.GetCacheStats()
+	if cacheStats == nil {
+		t.Error("GetCacheStats returned nil")
+	}
+
+	// Test AutoSave
+	stopChan := engine.AutoSave(100 * time.Millisecond)
+	if stopChan == nil {
+		t.Error("AutoSave returned nil channel")
+	}
+	stopChan <- true
+
+	// Add dimension configuration before adding rule
+	regionDim := NewDimensionConfig("region", 0, false)
+	regionDim.SetWeight(MatchTypeEqual, 10.0)
+	if err := engine.AddDimension(regionDim); err != nil {
+		t.Errorf("Failed to add dimension: %v", err)
+	}
+
+	// Add a rule and test RebuildIndex
+	rule := NewRule("rebuild-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+	if err := engine.AddRule(rule); err != nil {
+		t.Errorf("Failed to add rule: %v", err)
+	}
+
+	if err := engine.RebuildIndex(); err != nil {
+		t.Errorf("RebuildIndex failed: %v", err)
+	}
+}
+
+func TestQueryCacheAPIIntegration(t *testing.T) {
+	// Integration test for QueryCache API methods
+	cache := NewQueryCache(10, 60*time.Second)
+
+	// Test Size
+	size := cache.Size()
+	if size != 0 {
+		t.Errorf("Expected size 0, got %d", size)
+	}
+
+	// Test SetWithTTL
+	query := CreateQuery(map[string]string{"test": "value"})
+	result := &MatchResult{Rule: &Rule{ID: "test"}, TotalWeight: 1.0}
+	cache.SetWithTTL(query, result, 30*time.Second)
+
+	// Test Size again
+	size = cache.Size()
+	if size != 1 {
+		t.Errorf("Expected size 1, got %d", size)
+	}
+
+	// Test CleanupExpired
+	cleanedCount := cache.CleanupExpired()
+	t.Logf("Cleaned %d expired entries", cleanedCount)
+
+	// Test Stats
+	stats := cache.Stats()
+	if stats == nil {
+		t.Error("Stats returned nil")
+	}
+
+	// Test StartCleanupWorker
+	stopChan := cache.StartCleanupWorker(100 * time.Millisecond)
+	if stopChan == nil {
+		t.Error("StartCleanupWorker returned nil channel")
+	}
+	stopChan <- true
+}
+
+func TestMultiLevelCacheAPIIntegration(t *testing.T) {
+	// Integration test for MultiLevelCache API methods
+	mlc := NewMultiLevelCache(10, 60*time.Second, 100, 120*time.Second)
+	if mlc == nil {
+		t.Error("NewMultiLevelCache returned nil")
+	}
+
+	// Test Get on empty cache
+	query := CreateQuery(map[string]string{"test": "value"})
+	result := mlc.Get(query)
+	if result != nil {
+		t.Error("Expected nil result for empty cache")
+	}
+
+	// Test Set
+	matchResult := &MatchResult{Rule: &Rule{ID: "test"}, TotalWeight: 1.0}
+	mlc.Set(query, matchResult)
+
+	// Test Get again
+	result = mlc.Get(query)
+	if result == nil {
+		t.Error("Expected result after set")
+	}
+
+	// Test Stats
+	stats := mlc.Stats()
+	if stats == nil {
+		t.Error("Stats returned nil")
+	}
+
+	// Test Clear
+	mlc.Clear()
+}
+
+func TestForestAPIIntegration(t *testing.T) {
+	// Integration test for Forest API methods
+	forest := CreateForestIndexCompat()
+
+	// Test InitializeDimension (compatibility method)
+	forest.InitializeDimension("new-dim")
+
+	// Test that forest was created successfully
+	if forest == nil {
+		t.Error("CreateForestIndexCompat returned nil")
+	}
+
+	// Test that we can get stats from the forest
+	stats := forest.GetStats()
+	if stats == nil {
+		t.Error("GetStats returned nil")
+	}
+}
+
+func TestTypesAPIIntegration(t *testing.T) {
+	// Integration test for Types API methods
+	rule := NewRule("types-test").
+		Dimension("region", "us-west", MatchTypeEqual).
+		Build()
+
+	// Test GetDimensionValue
+	value := rule.GetDimensionValue("region")
+	if value == nil {
+		t.Error("Expected dimension value, got nil")
+	}
+	if value != nil && value.Value != "us-west" {
+		t.Errorf("Expected 'us-west', got '%s'", value.Value)
+	}
+
+	// Test non-existent dimension
+	value = rule.GetDimensionValue("nonexistent")
+	if value != nil {
+		t.Errorf("Expected nil, got %v", value)
+	}
+
+	// Test HasDimension
+	if !rule.HasDimension("region") {
+		t.Error("Expected rule to have 'region' dimension")
+	}
+
+	if rule.HasDimension("nonexistent") {
+		t.Error("Expected rule to not have 'nonexistent' dimension")
+	}
+}
+
+// TestPublicUpdateAndGetRule tests the public UpdateRule and GetRule methods
+func TestPublicUpdateAndGetRule(t *testing.T) {
+	// Create matcher with mock persistence
+	persistence := NewJSONPersistence("./test_data")
+	matcher, err := NewInMemoryMatcher(persistence, nil, "test-node-1")
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer matcher.Close()
+
+	// Add test dimensions
+	err = addTestDimensions(matcher)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Create and add initial rule
+	rule := NewRule("test-public-rule").
+		Dimension("product", "TestProduct", MatchTypeEqual).
+		Dimension("route", "TestRoute", MatchTypeEqual).
+		Metadata("action", "allow").
+		Metadata("priority", "high").
+		Build()
+
+	err = matcher.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Test GetRule
+	retrieved, err := matcher.GetRule("test-public-rule")
+	if err != nil {
+		t.Fatalf("Failed to get rule: %v", err)
+	}
+
+	if retrieved.ID != "test-public-rule" {
+		t.Errorf("Expected rule ID 'test-public-rule', got %s", retrieved.ID)
+	}
+
+	if retrieved.Metadata["action"] != "allow" {
+		t.Errorf("Expected action 'allow', got %v", retrieved.Metadata["action"])
+	}
+
+	// Test UpdateRule with public method
+	updatedRule := NewRule("test-public-rule").
+		Dimension("product", "TestProduct", MatchTypeEqual).
+		Dimension("route", "UpdatedRoute", MatchTypeEqual). // Changed route
+		Metadata("action", "block").                        // Changed action
+		Metadata("priority", "medium").                     // Changed priority
+		Build()
+
+	err = matcher.UpdateRule(updatedRule) // Using public UpdateRule method
+	if err != nil {
+		t.Fatalf("Failed to update rule: %v", err)
+	}
+
+	// Verify update using public GetRule method
+	retrievedUpdated, err := matcher.GetRule("test-public-rule") // Using public GetRule method
+	if err != nil {
+		t.Fatalf("Failed to get updated rule: %v", err)
+	}
+
+	// Check that dimensions were updated
+	routeDim := retrievedUpdated.GetDimensionValue("route")
+	if routeDim == nil {
+		t.Fatalf("Route dimension not found")
+	}
+
+	if routeDim.Value != "UpdatedRoute" {
+		t.Errorf("Expected route 'UpdatedRoute', got %s", routeDim.Value)
+	}
+
+	// Check that metadata was updated
+	if retrievedUpdated.Metadata["action"] != "block" {
+		t.Errorf("Expected action 'block', got %v", retrievedUpdated.Metadata["action"])
+	}
+
+	if retrievedUpdated.Metadata["priority"] != "medium" {
+		t.Errorf("Expected priority 'medium', got %v", retrievedUpdated.Metadata["priority"])
+	}
+
+	// Test GetRule with non-existent rule
+	_, err = matcher.GetRule("non-existent-rule")
+	if err == nil {
+		t.Error("Expected error when getting non-existent rule")
+	}
+}
+
+// TestPublicAPIImmutability tests that GetRule returns immutable copies
+func TestPublicAPIImmutability(t *testing.T) {
+	// Create matcher with mock persistence
+	persistence := NewJSONPersistence("./test_data")
+	matcher, err := NewInMemoryMatcher(persistence, nil, "test-node-1")
+	if err != nil {
+		t.Fatalf("Failed to create matcher: %v", err)
+	}
+	defer matcher.Close()
+
+	// Add test dimensions
+	err = addTestDimensions(matcher)
+	if err != nil {
+		t.Fatalf("Failed to initialize dimensions: %v", err)
+	}
+
+	// Create and add rule
+	rule := NewRule("immutable-test").
+		Dimension("product", "TestProduct", MatchTypeEqual).
+		Metadata("action", "allow").
+		Build()
+
+	err = matcher.AddRule(rule)
+	if err != nil {
+		t.Fatalf("Failed to add rule: %v", err)
+	}
+
+	// Get rule and modify the returned copy
+	retrieved, err := matcher.GetRule("immutable-test")
+	if err != nil {
+		t.Fatalf("Failed to get rule: %v", err)
+	}
+
+	// Modify the returned copy
+	retrieved.Metadata["action"] = "modified"
+	if dim := retrieved.GetDimensionValue("product"); dim != nil {
+		dim.Value = "modified"
+	}
+
+	// Get the rule again and verify it wasn't affected
+	retrievedAgain, err := matcher.GetRule("immutable-test")
+	if err != nil {
+		t.Fatalf("Failed to get rule again: %v", err)
+	}
+
+	if retrievedAgain.Metadata["action"] != "allow" {
+		t.Error("Rule was modified when it should be immutable")
+	}
+
+	if dim := retrievedAgain.GetDimensionValue("product"); dim != nil {
+		if dim.Value != "TestProduct" {
+			t.Error("Dimension was modified when it should be immutable")
+		}
+	}
+}
