@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // JSONPersistence implements PersistenceInterface using JSON files
@@ -143,6 +144,7 @@ func (jp *JSONPersistence) Health(ctx context.Context) error {
 type MockEventSubscriber struct {
 	events chan *Event
 	closed bool
+	mu     sync.RWMutex
 }
 
 // NewMockEventSubscriber creates a new mock event subscriber
@@ -154,6 +156,9 @@ func NewMockEventSubscriber() *MockEventSubscriber {
 
 // Publish publishes an event to the mock broker
 func (mes *MockEventSubscriber) Publish(ctx context.Context, event *Event) error {
+	mes.mu.RLock()
+	defer mes.mu.RUnlock()
+
 	if mes.closed {
 		return fmt.Errorf("subscriber is closed")
 	}
@@ -171,12 +176,17 @@ func (mes *MockEventSubscriber) Publish(ctx context.Context, event *Event) error
 // Subscribe starts listening for events
 func (mes *MockEventSubscriber) Subscribe(ctx context.Context, events chan<- *Event) error {
 	go func() {
-		for event := range mes.events {
-			if mes.closed {
-				return
-			}
+		for {
 			select {
-			case events <- event:
+			case event, ok := <-mes.events:
+				if !ok {
+					return
+				}
+				select {
+				case events <- event:
+				case <-ctx.Done():
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
@@ -187,13 +197,27 @@ func (mes *MockEventSubscriber) Subscribe(ctx context.Context, events chan<- *Ev
 
 // PublishEvent publishes an event (for testing) - deprecated, use Publish instead
 func (mes *MockEventSubscriber) PublishEvent(event *Event) {
-	if !mes.closed {
-		mes.events <- event
+	mes.mu.RLock()
+	closed := mes.closed
+	mes.mu.RUnlock()
+
+	if closed {
+		return
+	}
+
+	// Best-effort publish without context
+	select {
+	case mes.events <- event:
+	default:
+		// drop if full
 	}
 }
 
 // Close closes the subscriber
 func (mes *MockEventSubscriber) Close() error {
+	mes.mu.Lock()
+	defer mes.mu.Unlock()
+
 	if !mes.closed {
 		mes.closed = true
 		close(mes.events)

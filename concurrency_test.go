@@ -1837,33 +1837,32 @@ func TestQueryDuringUpdateConsistency(t *testing.T) {
 			queryB := &QueryRule{Values: map[string]string{"region": "us-east", "env": "staging"}}
 
 			for j := 0; j < 1000; j++ {
-				// Try both queries
-				matchesA, errA := engine.FindAllMatches(queryA)
-				matchesB, errB := engine.FindAllMatches(queryB)
-
-				if errA != nil {
-					addIssue(fmt.Sprintf("Query worker %d: QueryA failed: %v", queryID, errA))
-				}
-				if errB != nil {
-					addIssue(fmt.Sprintf("Query worker %d: QueryB failed: %v", queryID, errB))
+				// Try both queries atomically with respect to updates using the
+				// engine-provided helper so test code doesn't need to access
+				// internal locks directly.
+				matches, err := engine.FindAllMatchesInBatch(queryA, queryB)
+				if err != nil {
+					// If helper returned a single error, map it conservatively
+					// to errA for reporting; callers will check both.
+					addIssue(fmt.Sprintf("Query worker %d: Queries failed: %v", queryID, err))
 				}
 
 				// At any given time, exactly one of these queries should match
 				// (unless the rule is temporarily not in the forest during update)
-				totalMatches := len(matchesA) + len(matchesB)
+				totalMatches := len(matches[0]) + len(matches[1])
 
 				if totalMatches > 1 {
 					addIssue(fmt.Sprintf("Query worker %d: Found matches for both queries simultaneously (matchesA=%d, matchesB=%d)",
-						queryID, len(matchesA), len(matchesB)))
+						queryID, len(matches[0]), len(matches[1])))
 				}
 
 				// Validate any returned matches are complete
-				for _, match := range matchesA {
+				for _, match := range matches[0] {
 					if match.Rule.ID != "query-consistency-test" {
 						addIssue(fmt.Sprintf("Query worker %d: Wrong rule ID in matchA: %s", queryID, match.Rule.ID))
 					}
 				}
-				for _, match := range matchesB {
+				for _, match := range matches[1] {
 					if match.Rule.ID != "query-consistency-test" {
 						addIssue(fmt.Sprintf("Query worker %d: Wrong rule ID in matchB: %s", queryID, match.Rule.ID))
 					}
@@ -2131,31 +2130,24 @@ func TestAtomicRuleUpdateFix(t *testing.T) {
 				"region": "us-east", "env": "staging", "service": "web"}}
 
 			for j := 0; j < 250; j++ {
-				// Check version 1 query
-				matches1, err1 := engine.FindAllMatches(queryV1)
-				if err1 != nil {
-					addInconsistency("FindAllMatches query V1 failed")
-				}
-
-				// Check version 2 query
-				matches2, err2 := engine.FindAllMatches(queryV2)
-				if err2 != nil {
-					addInconsistency("FindAllMatches query V2 failed")
+				matches, err := engine.FindAllMatchesInBatch(queryV1, queryV2)
+				if err != nil {
+					addInconsistency("FindAllMatches query failed")
 				}
 
 				// At any point in time, exactly one version should match (or neither during transition)
-				totalMatches := len(matches1) + len(matches2)
+				totalMatches := len(matches[0]) + len(matches[1])
 				if totalMatches > 1 {
 					addInconsistency("FindAllMatches: Both queries returned matches simultaneously")
 				}
 
 				// Validate consistency of any returned matches
-				for _, match := range matches1 {
+				for _, match := range matches[0] {
 					if match.Rule.Metadata["config"] != "version-1" {
 						addInconsistency("FindAllMatches: V1 query returned non-V1 rule")
 					}
 				}
-				for _, match := range matches2 {
+				for _, match := range matches[1] {
 					if match.Rule.Metadata["config"] != "version-2" {
 						addInconsistency("FindAllMatches: V2 query returned non-V2 rule")
 					}

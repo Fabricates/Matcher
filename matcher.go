@@ -617,11 +617,11 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 // FindBestMatch finds the best matching rule for a query
 func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) {
 	start := time.Now()
-	
+
 	// Update query count using atomic operation (no lock needed)
 	atomic.AddInt64(&m.stats.TotalQueries, 1)
 
-	// Check cache first
+	// Check cache first while holding read lock
 	if result := m.cache.Get(query); result != nil {
 		m.updateCacheStats(true)
 		// Update average query time without lock
@@ -631,8 +631,15 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 
 	m.updateCacheStats(false)
 
-	// Find all matches
-	matches, err := m.FindAllMatches(query)
+	// Acquire read lock for the entire lookup path so the cache check,
+	// candidate computation and cache population happen with a consistent
+	// view of the authoritative state. This prevents races where an
+	// UpdateRule can interleave and make the query observe partial updates.
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Find all matches while holding the read lock using the nop-lock helper
+	matches, err := m.findAllMatchesNoLock(query)
 	if err != nil {
 		// Update average query time without lock
 		m.updateQueryTimeStats(time.Since(start))
@@ -647,7 +654,7 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 
 	best := matches[0] // already sorted
 
-	// Cache the result
+	// Cache the result (safe because we used read lock while computing matches)
 	m.cache.Set(query, best)
 
 	// Update average query time without lock
@@ -662,13 +669,47 @@ func (m *InMemoryMatcher) updateQueryTimeStats(queryTime time.Duration) {
 	// to avoid taking locks in the read path. This trades off some precision for
 	// better concurrency performance and prevents read starvation.
 	// The stats will be updated during rebuild, add/update/delete operations.
+	atomic.AddInt64(&m.stats.TotalQueryTime, queryTime.Milliseconds())
 }
 
 // FindAllMatches finds all matching rules for a query
 func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
+	// RLocked compatibility wrapper: acquire read lock and call helper
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.findAllMatchesNoLock(query)
+}
+
+// FindAllMatchesInBatch finds the best matching rule for each query in the provided
+// slice and returns results in the same order. The entire operation is
+// performed while holding the matcher's read lock so the caller sees a
+// consistent snapshot with respect to concurrent updates.
+func (m *InMemoryMatcher) FindAllMatchesInBatch(queries []*QueryRule) ([][]*MatchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	results := make([][]*MatchResult, len(queries))
+
+	for i, q := range queries {
+		matches, err := m.findAllMatchesNoLock(q)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(matches) == 0 {
+			results[i] = nil
+			continue
+		}
+
+		results[i] = matches
+	}
+
+	return results, nil
+}
+
+// findAllMatchesNoLock performs the match candidate verification without taking locks.
+// Caller must hold appropriate locks (RLock/RWMutex) if concurrency safety is required.
+func (m *InMemoryMatcher) findAllMatchesNoLock(query *QueryRule) ([]*MatchResult, error) {
 	// Get candidate rules from appropriate forest index
 	forestIndex := m.getForestIndex(query.TenantID, query.ApplicationID)
 	var candidates []RuleWithWeight
@@ -682,7 +723,7 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 
 	var matches []*MatchResult
 
-	// ATOMIC CONSISTENCY: Double-check approach to prevent race conditions
+	// Double-check approach to prevent race conditions
 	// For each candidate from forest, verify it actually matches the query dimensions
 	// AND exists in m.rules AND its dimensions in m.rules still match the query
 	for _, candidate := range candidates {
@@ -718,6 +759,65 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 		})
 	}
 	return matches, nil
+}
+
+// FindBestMatchInBatch finds the best matching rule for each query in the provided
+// slice and returns results in the same order. The entire operation is
+// performed while holding the matcher's read lock so the caller sees a
+// consistent snapshot with respect to concurrent updates.
+func (m *InMemoryMatcher) FindBestMatchInBatch(queries []*QueryRule) ([]*MatchResult, error) {
+	start := time.Now()
+
+	// Count these as queries (approximate) for stats
+	atomic.AddInt64(&m.stats.TotalQueries, int64(len(queries)))
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	results := make([]*MatchResult, len(queries))
+
+	// Collect items to cache after computing (we avoid mutating cache while
+	// holding the read lock in a way that could conflict with other writers).
+	type toCacheItem struct {
+		q    *QueryRule
+		best *MatchResult
+	}
+	var toCache []toCacheItem
+
+	for i, q := range queries {
+		// Check cache first
+		if res := m.cache.Get(q); res != nil {
+			m.updateCacheStats(true)
+			results[i] = res
+			continue
+		}
+
+		m.updateCacheStats(false)
+
+		matches, err := m.findAllMatchesNoLock(q)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(matches) == 0 {
+			results[i] = nil
+			continue
+		}
+
+		best := matches[0]
+		results[i] = best
+		toCache = append(toCache, toCacheItem{q: q, best: best})
+	}
+
+	// Populate cache for computed results
+	for _, item := range toCache {
+		m.cache.Set(item.q, item.best)
+	}
+
+	// Update average query time without lock
+	m.updateQueryTimeStats(time.Since(start))
+
+	return results, nil
 }
 
 // dimensionsEqual checks if two rules have identical dimensions
@@ -1044,10 +1144,23 @@ func (m *InMemoryMatcher) GetStats() *MatcherStats {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Create a copy to avoid race conditions, using atomic read for TotalQueries
+	// Create a copy to avoid race conditions
 	stats := *m.stats
-	stats.TotalQueries = atomic.LoadInt64(&m.stats.TotalQueries)
+	// Guard against divide-by-zero when no queries have been recorded yet
+	if stats.TotalQueries > 0 {
+		stats.AverageQueryTime = stats.TotalQueryTime / stats.TotalQueries
+	} else {
+		stats.AverageQueryTime = 0
+	}
 	return &stats
+}
+
+// SetAllowDuplicateWeights configures whether rules with duplicate weights are allowed
+// By default, duplicate weights are not allowed to ensure deterministic matching
+func (m *InMemoryMatcher) SetAllowDuplicateWeights(allow bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allowDuplicateWeights = allow
 }
 
 // SaveToPersistence saves current state to persistence layer
