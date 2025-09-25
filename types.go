@@ -87,11 +87,12 @@ func (dc *DimensionConfig) Clone() *DimensionConfig {
 }
 
 // SetWeight sets the weight for a specific match type
-func (dc *DimensionConfig) SetWeight(matchType MatchType, weight float64) {
+func (dc *DimensionConfig) SetWeight(matchType MatchType, weight float64) *DimensionConfig {
 	if dc.Weights == nil {
 		dc.Weights = make(map[MatchType]float64)
 	}
 	dc.Weights[matchType] = weight
+	return dc
 }
 
 // GetWeight returns the weight for a specific match type, returning 0.0 if not configured
@@ -308,12 +309,13 @@ type Broker interface {
 
 // MatcherStats provides statistics about the matcher
 type MatcherStats struct {
-	TotalRules       int           `json:"total_rules"`
-	TotalDimensions  int           `json:"total_dimensions"`
-	TotalQueries     int64         `json:"total_queries"`
-	AverageQueryTime time.Duration `json:"average_query_time"`
-	CacheHitRate     float64       `json:"cache_hit_rate"`
-	LastUpdated      time.Time     `json:"last_updated"`
+	AverageQueryTime int64     `json:"average_query_time"`
+	TotalRules       int       `json:"total_rules"`
+	TotalDimensions  int       `json:"total_dimensions"`
+	TotalQueries     int64     `json:"total_queries"`
+	TotalQueryTime   int64     `json:"total_query_time"`
+	CacheHitRate     float64   `json:"cache_hit_rate"`
+	LastUpdated      time.Time `json:"last_updated"`
 }
 
 // GetDimensionValue returns the value for a specific dimension in the rule

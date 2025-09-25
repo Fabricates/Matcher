@@ -15,6 +15,18 @@ A highly efficient, scalable rule matching engine built in Go that supports dyna
 - **Multi-Level Caching**: L1/L2 cache system with configurable TTL
 - **Production Validated**: Tested with 50k rules, 20 dimensions on 2 cores within 4GB memory
 
+### Benchmarks (September 2025)
+
+Collected on Linux (Intel(R) Xeon(R) CPU E5-2690 v2 @ 3.00GHz) using `go test -bench . -benchmem`.
+
+- Query performance (BenchmarkQueryPerformance): 62,754 ns/op, 2,201 B/op, 42 allocs/op (n=19,257).
+- Memory efficiency (measured in performance_test.go):
+    - Small (1k rules, 5 dims): total ≈ 3.41 MB (≈ 3,576 bytes/rule).
+    - Medium (10k rules, 10 dims): total ≈ 71.49 MB (≈ 7,496 bytes/rule).
+    - Large (50k rules, 15 dims): total ≈ 578.14 MB (≈ 12,124 bytes/rule).
+
+Notes: benchmark scenarios and memory measurements are implemented in `performance_test.go`. Run the full benchmark suite locally with `go test -run ^$ -bench . -benchmem ./...` to reproduce these numbers on your hardware.
+
 ### Flexible Rule System
 
 - **Dynamic Dimensions**: Add, remove, and reorder dimensions at runtime
@@ -734,6 +746,17 @@ BenchmarkQueryPerformance-2    39068    168994 ns/op
 - **169µs per operation** under high concurrency
 - **5,917 QPS** sustained performance in benchmark conditions
 - Thread-safe concurrent operations validated
+
+### Latest benchmark run (captured)
+
+The most recent benchmark run (environment: Linux, Intel Xeon E5-2690 v2) produced these representative numbers:
+
+- Query performance: ~46,977 ns/op (≈47µs) with 2,136 B/op and 41 allocs/op (BenchmarkQueryPerformance)
+- Memory per rule (small - 1k rules, 5 dims): ~3.5 KB per rule
+- Memory per rule (medium - 10k rules, 10 dims): ~7.48 KB per rule (≈71.3 MB total)
+- Memory per rule (large - 50k rules, 15 dims): ~12.13 KB per rule (≈578.5 MB total)
+
+See `docs/LATEST_BENCH.txt` for full raw output of the benchmark run.
 
 ### Performance Scaling Analysis
 

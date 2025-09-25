@@ -6,6 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math"
 	"os"
 	"runtime"
 	"sync"
@@ -13,6 +15,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
+var messageInterval = float64(3 * time.Second)
 
 // RedisClientInterface defines the common interface for all Redis client types
 type RedisClientInterface interface {
@@ -516,7 +520,9 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 	defer r.timestampMu.Unlock()
 
 	// Check if this is a new event
-	if latestEvent.Timestamp <= r.lastTimestamp {
+	if latestEvent.Timestamp <= r.lastTimestamp ||
+		math.Abs(float64(time.Now().UnixNano()-r.lastTimestamp)) < messageInterval {
+		slog.WarnContext(ctx, "Delay too close events", "latest", latestEvent, "last", r.lastTimestamp)
 		return nil // No new events
 	}
 

@@ -213,9 +213,7 @@ func (me *MatcherEngine) AddDimension(config *DimensionConfig) error {
 // SetAllowDuplicateWeights configures whether rules with duplicate weights are allowed
 // By default, duplicate weights are not allowed to ensure deterministic matching
 func (me *MatcherEngine) SetAllowDuplicateWeights(allow bool) {
-	me.matcher.mu.Lock()
-	defer me.matcher.mu.Unlock()
-	me.matcher.allowDuplicateWeights = allow
+	me.matcher.SetAllowDuplicateWeights(allow)
 }
 
 // FindBestMatch finds the best matching rule for a query
@@ -223,9 +221,22 @@ func (me *MatcherEngine) FindBestMatch(query *QueryRule) (*MatchResult, error) {
 	return me.matcher.FindBestMatch(query)
 }
 
+// FindBestMatchInBatch runs multiple queries under a single matcher read-lock and
+// returns the best match for each query in the same order. This provides an
+// atomic snapshot view for a group of queries with respect to concurrent
+// updates.
+func (me *MatcherEngine) FindBestMatchInBatch(queries ...*QueryRule) ([]*MatchResult, error) {
+	return me.matcher.FindBestMatchInBatch(queries)
+}
+
 // FindAllMatches finds all matching rules for a query
 func (me *MatcherEngine) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
 	return me.matcher.FindAllMatches(query)
+}
+
+// FindAllMatches finds all matching rules for a query
+func (me *MatcherEngine) FindAllMatchesInBatch(query ...*QueryRule) ([][]*MatchResult, error) {
+	return me.matcher.FindAllMatchesInBatch(query)
 }
 
 // ListRules returns all rules with pagination
