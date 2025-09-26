@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,11 +13,7 @@ func main() {
 	fmt.Println("=== Debug Matching Test ===")
 
 	// Create engine
-	engine, err := matcher.NewInMemoryMatcher(
-		matcher.NewJSONPersistence("./debug_data"),
-		nil,
-		"debug-test",
-	)
+	engine, err := matcher.NewMatcherEngine(context.Background(), matcher.NewJSONPersistence("./debug_data"), nil, "debug-test", nil, 0)
 	if err != nil {
 		slog.Error("Failed to create matcher", "error", err)
 		os.Exit(1)

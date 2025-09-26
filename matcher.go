@@ -3,7 +3,6 @@ package matcher
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"sort"
 	"sync"
@@ -13,9 +12,10 @@ import (
 )
 
 const snapshotFileName = "snapshot" // .mermaid, .cache
+const defaultInitialTimeout = 5 * time.Second
 
-// InMemoryMatcher implements the core matching logic using forest indexes
-type InMemoryMatcher struct {
+// MemoryMatcherEngine implements the core matching logic using forest indexes
+type MemoryMatcherEngine struct {
 	forestIndexes         map[string]*ForestIndex     // tenant_app_key -> ForestIndex
 	dimensionConfigs      *DimensionConfigs           // Managed dimension configurations
 	rules                 map[string]*Rule            // rule_id -> rule
@@ -25,38 +25,26 @@ type InMemoryMatcher struct {
 	persistence           PersistenceInterface
 	broker                Broker // Changed from eventSub to eventBroker
 	eventsChan            chan *Event
-	nodeID                string // Node identifier for filtering events
-	allowDuplicateWeights bool   // When false (default), prevents rules with same weight
+	nodeID                string        // Node identifier for filtering events
+	allowDuplicateWeights bool          // When false (default), prevents rules with same weight
+	initialTimeout        time.Duration // Timeout for loadFromPersistence
 	mu                    sync.RWMutex
 	ctx                   context.Context
-	cancel                context.CancelFunc
 	snapshotChanged       int64 // atomic flag to indicate if snapshot needs to be updated
+
 }
 
-// NewInMemoryMatcher creates an in-memory matcher
-func NewInMemoryMatcher(persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
-}
-
-// NewInMemoryMatcherWithContext creates an in-memory matcher with a custom context for timeout handling
-func NewInMemoryMatcherWithContext(ctx context.Context, persistence PersistenceInterface, broker Broker, nodeID string) (*InMemoryMatcher, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
-}
-
-// NewInMemoryMatcherWithDimensions creates an in-memory matcher
-func NewInMemoryMatcherWithDimensions(persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs) (*InMemoryMatcher, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	return newInMemoryMatcherWithContext(ctx, cancel, persistence, broker, nodeID, nil)
-}
-
-// newInMemoryMatcherWithContext is a private helper that creates an in-memory matcher with the provided context
-func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFunc, persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs) (*InMemoryMatcher, error) {
+// NewMatcherEngine is a private helper that creates an in-memory matcher with the provided context
+func newInMemoryMatcherEngine(ctx context.Context, persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs, initialTimeout time.Duration) (*MemoryMatcherEngine, error) {
 	if dcs == nil {
 		dcs = NewDimensionConfigs() // Initialize managed dimension configurations
 	}
-	matcher := &InMemoryMatcher{
+
+	if int64(initialTimeout) <= 0 {
+		initialTimeout = defaultInitialTimeout
+	}
+
+	matcher := &MemoryMatcherEngine{
 		forestIndexes:    make(map[string]*ForestIndex),
 		dimensionConfigs: dcs,
 		rules:            make(map[string]*Rule),
@@ -69,21 +57,25 @@ func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFun
 		broker:          broker,
 		eventsChan:      make(chan *Event, 100),
 		nodeID:          nodeID,
+		initialTimeout:  initialTimeout,
 		snapshotChanged: 0, // Initialize atomic flag to 1 (no changes)
-		ctx:             context.Background(),
-		cancel:          cancel,
+		ctx:             ctx,
 	}
+
+	// Log matcher creation
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	logger.InfoContext(ctx, "created in-memory matcher", "node_id", nodeID)
 
 	// Initialize with data from persistence
 	if err := matcher.loadFromPersistence(ctx); err != nil {
-		cancel()
 		return nil, fmt.Errorf("failed to load data from persistence: %w", err)
 	}
 
 	// Start event subscription if provided
 	if broker != nil {
 		if err := matcher.startEventSubscription(); err != nil {
-			cancel()
 			return nil, fmt.Errorf("failed to start event subscription: %w", err)
 		}
 	}
@@ -98,14 +90,14 @@ func newInMemoryMatcherWithContext(ctx context.Context, cancel context.CancelFun
 }
 
 // startSnapshotMonitor starts a goroutine that monitors for snapshot changes
-func (m *InMemoryMatcher) startSnapshotMonitor() {
+func (m *MemoryMatcherEngine) startSnapshotMonitor() {
 	// Skip snapshot monitoring for test environments
 	if testing.Testing() {
-		slog.Info("Snapshot monitor skipped for test environment", "node_id", m.nodeID)
+		logger.InfoContext(m.ctx, "Snapshot monitor skipped for test environment", "node_id", m.nodeID)
 		return
 	}
 
-	slog.Info("Starting snapshot monitor", "node_id", m.nodeID)
+	logger.InfoContext(m.ctx, "Starting snapshot monitor", "node_id", m.nodeID)
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
@@ -113,20 +105,20 @@ func (m *InMemoryMatcher) startSnapshotMonitor() {
 		for {
 			select {
 			case <-m.ctx.Done():
-				slog.Info("Snapshot monitor stopped")
+				logger.InfoContext(m.ctx, "Snapshot monitor stopped")
 				return
 			case <-ticker.C:
 				// Check if snapshot needs to be updated using CAS
 				if atomic.CompareAndSwapInt64(&m.snapshotChanged, 1, 0) {
-					slog.Info("Snapshot change detected, dumping snapshot")
+					logger.InfoContext(m.ctx, "Snapshot change detected, dumping snapshot")
 					if err := m.dumpSnapshot(); err != nil {
-						slog.Error("Failed to dump snapshot", "error", err)
+						logger.ErrorContext(m.ctx, "Failed to dump snapshot", "error", err)
 					} else {
-						slog.Info("Snapshot dump complete, check snapshot.*.")
+						logger.InfoContext(m.ctx, "Snapshot dump complete, check snapshot.*.")
 					}
 				} else if st, err := os.Stat(snapshotFileName + ".mermaid"); err != nil || st.Size() <= 0 {
 					// First time snapshot generation
-					slog.Info("No snapshot file found, triggering initial snapshot")
+					logger.InfoContext(m.ctx, "No snapshot file found, triggering initial snapshot")
 					atomic.CompareAndSwapInt64(&m.snapshotChanged, 0, 1)
 				}
 			}
@@ -135,7 +127,7 @@ func (m *InMemoryMatcher) startSnapshotMonitor() {
 }
 
 // dumpSnapshot creates a JSON snapshot of the current matcher state
-func (m *InMemoryMatcher) dumpSnapshot() error {
+func (m *MemoryMatcherEngine) dumpSnapshot() error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -153,7 +145,7 @@ func (m *InMemoryMatcher) dumpSnapshot() error {
 }
 
 // getTenantKey generates a unique key for tenant and application combination
-func (m *InMemoryMatcher) getTenantKey(tenantID, applicationID string) string {
+func (m *MemoryMatcherEngine) getTenantKey(tenantID, applicationID string) string {
 	if tenantID == "" && applicationID == "" {
 		return "default"
 	}
@@ -161,7 +153,7 @@ func (m *InMemoryMatcher) getTenantKey(tenantID, applicationID string) string {
 }
 
 // getOrCreateForestIndex gets or creates a forest index for the specified tenant/application
-func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string) *ForestIndex {
+func (m *MemoryMatcherEngine) getOrCreateForestIndex(tenantID, applicationID string) *ForestIndex {
 	key := m.getTenantKey(tenantID, applicationID)
 
 	if forestIndex, exists := m.forestIndexes[key]; exists {
@@ -173,6 +165,9 @@ func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string)
 	forestIndex := &ForestIndex{RuleForest: newForest}
 	m.forestIndexes[key] = forestIndex
 
+	// Log creation of new forest index
+	logger.InfoContext(m.ctx, "created forest index", "tenant_app", key)
+
 	// Initialize tenant rules map if needed
 	if m.tenantRules[key] == nil {
 		m.tenantRules[key] = make(map[string]*Rule)
@@ -182,15 +177,21 @@ func (m *InMemoryMatcher) getOrCreateForestIndex(tenantID, applicationID string)
 }
 
 // getForestIndex gets the forest index for the specified tenant/application (read-only)
-func (m *InMemoryMatcher) getForestIndex(tenantID, applicationID string) *ForestIndex {
+func (m *MemoryMatcherEngine) getForestIndex(tenantID, applicationID string) *ForestIndex {
 	key := m.getTenantKey(tenantID, applicationID)
 	return m.forestIndexes[key]
 }
 
 // loadFromPersistence loads rules and dimensions from persistence layer
-func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
+func (m *MemoryMatcherEngine) loadFromPersistence(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, m.initialTimeout)
+	defer cancel()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Log start of persistence load
+	logger.InfoContext(ctx, "loading data from persistence", "node_id", m.nodeID)
 
 	// Load dimension configurations
 	configs, err := m.persistence.LoadDimensionConfigs(ctx)
@@ -233,6 +234,8 @@ func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
 		}
 	}
 
+	logger.InfoContext(ctx, "loaded rules and dimensions from persistence", "num_rules", len(m.rules), "num_dimensions", m.dimensionConfigs.Count())
+
 	m.stats.TotalRules = len(m.rules)
 	m.stats.TotalDimensions = m.dimensionConfigs.Count()
 
@@ -240,17 +243,19 @@ func (m *InMemoryMatcher) loadFromPersistence(ctx context.Context) error {
 }
 
 // startEventSubscription starts listening for events from the event subscriber
-func (m *InMemoryMatcher) startEventSubscription() error {
+func (m *MemoryMatcherEngine) startEventSubscription() error {
 	if err := m.broker.Subscribe(m.ctx, m.eventsChan); err != nil {
 		return fmt.Errorf("failed to subscribe to events: %w", err)
 	}
+
+	logger.InfoContext(m.ctx, "subscribed to event broker", "node_id", m.nodeID)
 
 	go m.handleEvents()
 	return nil
 }
 
 // handleEvents processes events from the event channel
-func (m *InMemoryMatcher) handleEvents() {
+func (m *MemoryMatcherEngine) handleEvents() {
 	for {
 		select {
 		case event := <-m.eventsChan:
@@ -259,9 +264,10 @@ func (m *InMemoryMatcher) handleEvents() {
 				continue
 			}
 
+			logger.DebugContext(m.ctx, "received event", "type", event.Type, "node_id", event.NodeID)
+
 			if err := m.processEvent(event); err != nil {
-				// Log error but continue processing
-				slog.Error("Error processing event", "error", err)
+				logger.ErrorContext(m.ctx, "error processing event", "error", err, "event_type", event.Type)
 			}
 		case <-m.ctx.Done():
 			return
@@ -270,7 +276,7 @@ func (m *InMemoryMatcher) handleEvents() {
 }
 
 // processEvent processes a single event
-func (m *InMemoryMatcher) processEvent(event *Event) error {
+func (m *MemoryMatcherEngine) processEvent(event *Event) error {
 	switch event.Type {
 	case EventTypeRuleAdded:
 		ruleEvent, ok := event.Data.(*RuleEvent)
@@ -317,9 +323,11 @@ func (m *InMemoryMatcher) processEvent(event *Event) error {
 }
 
 // AddRule adds a new rule to the matcher
-func (m *InMemoryMatcher) AddRule(rule *Rule) error {
+func (m *MemoryMatcherEngine) AddRule(rule *Rule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	logger.InfoContext(m.ctx, "adding rule", "rule_id", rule.ID, "tenant", rule.TenantID, "application", rule.ApplicationID)
 
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
@@ -346,6 +354,7 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 	// Add to internal structures
 	r, err := forestIndex.AddRule(rule)
 	if err != nil {
+		logger.ErrorContext(m.ctx, "failed to add rule to forest", "rule_id", rule.ID, "error", err)
 		return err
 	}
 	if r != nil {
@@ -372,16 +381,18 @@ func (m *InMemoryMatcher) AddRule(rule *Rule) error {
 		go m.publishEvent(event) // Publish asynchronously
 	}
 
+	logger.InfoContext(m.ctx, "rule added", "rule_id", rule.ID)
+
 	return nil
 }
 
 // UpdateRule updates an existing rule (public method)
-func (m *InMemoryMatcher) UpdateRule(rule *Rule) error {
+func (m *MemoryMatcherEngine) UpdateRule(rule *Rule) error {
 	return m.updateRule(rule)
 }
 
 // GetRule retrieves a rule by ID (public method)
-func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
+func (m *MemoryMatcherEngine) GetRule(ruleID string) (*Rule, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -395,11 +406,13 @@ func (m *InMemoryMatcher) GetRule(ruleID string) (*Rule, error) {
 }
 
 // updateRule updates an existing rule
-func (m *InMemoryMatcher) updateRule(rule *Rule) error {
+func (m *MemoryMatcherEngine) updateRule(rule *Rule) error {
 	// Use write lock to ensure complete atomicity during updates
 	// This prevents any concurrent queries from seeing partial state
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	logger.InfoContext(m.ctx, "updating rule", "rule_id", rule.ID, "tenant", rule.TenantID, "application", rule.ApplicationID)
 
 	// Check if rule exists - updateRule should only update existing rules
 	existingRule, exists := m.rules[rule.ID]
@@ -409,6 +422,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 
 	// Validate rule
 	if err := m.validateRule(rule); err != nil {
+		logger.WarnContext(m.ctx, "rule validation failed on update", "rule_id", rule.ID, "error", err)
 		return fmt.Errorf("invalid rule: %w", err)
 	}
 
@@ -435,6 +449,7 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 		// DEBUG: This should be the path taken for the atomic test
 		err = forestIndex.ReplaceRule(oldRule, rule)
 		if err != nil {
+			logger.ErrorContext(m.ctx, "ReplaceRule failed", "rule_id", rule.ID, "error", err)
 			return err
 		}
 		r = rule
@@ -453,6 +468,8 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 	if r != nil {
 		m.rules[rule.ID] = r
 	}
+
+	logger.InfoContext(m.ctx, "rule updated", "rule_id", rule.ID)
 
 	// Step 4: Update tenant tracking
 	if oldKey != key && m.tenantRules[oldKey] != nil {
@@ -488,17 +505,18 @@ func (m *InMemoryMatcher) updateRule(rule *Rule) error {
 }
 
 // DeleteRule removes a rule from the matcher
-func (m *InMemoryMatcher) DeleteRule(ruleID string) error {
+func (m *MemoryMatcherEngine) DeleteRule(ruleID string) error {
 	return m.deleteRule(ruleID)
 }
 
 // deleteRule removes a rule from the matcher (internal method)
-func (m *InMemoryMatcher) deleteRule(ruleID string) error {
+func (m *MemoryMatcherEngine) deleteRule(ruleID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	rule, exists := m.rules[ruleID]
 	if !exists {
+		logger.WarnContext(m.ctx, "delete: rule not found", "rule_id", ruleID)
 		return fmt.Errorf("rule not found: %s", ruleID)
 	}
 
@@ -537,18 +555,32 @@ func (m *InMemoryMatcher) deleteRule(ruleID string) error {
 		go m.publishEvent(event) // Publish asynchronously
 	}
 
+	logger.InfoContext(m.ctx, "rule deleted", "rule_id", ruleID)
+
 	return nil
 }
 
+// GetDimensionConfigs returns a deep copy of DimensionConfigs
+func (m *MemoryMatcherEngine) GetDimensionConfigs() *DimensionConfigs {
+	return m.dimensionConfigs.Clone(nil)
+}
+
+// LoadDimensions loads dimensions in bulk
+func (m *MemoryMatcherEngine) LoadDimensions(configs []*DimensionConfig) {
+	m.dimensionConfigs.LoadBulk(configs)
+}
+
 // AddDimension adds a new dimension configuration
-func (m *InMemoryMatcher) AddDimension(config *DimensionConfig) error {
+func (m *MemoryMatcherEngine) AddDimension(config *DimensionConfig) error {
 	return m.updateDimension(config)
 }
 
 // updateDimension updates dimension configuration
-func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
+func (m *MemoryMatcherEngine) updateDimension(config *DimensionConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	logger.InfoContext(m.ctx, "updating dimension config", "dimension", config.Name)
 
 	// Validate dimension config
 	if config.Name == "" {
@@ -579,15 +611,19 @@ func (m *InMemoryMatcher) updateDimension(config *DimensionConfig) error {
 		go m.publishEvent(event) // Publish asynchronously
 	}
 
+	logger.InfoContext(m.ctx, "dimension updated", "dimension", config.Name)
+
 	return nil
 }
 
 // deleteDimension removes a dimension configuration
-func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
+func (m *MemoryMatcherEngine) deleteDimension(dimensionName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	exists := m.dimensionConfigs.Remove(dimensionName)
+
+	logger.InfoContext(m.ctx, "delete dimension requested", "dimension", dimensionName, "existed", exists)
 
 	// Note: We don't remove the forest here as it might still contain rules
 	// In production, you might want to handle this more carefully
@@ -611,11 +647,15 @@ func (m *InMemoryMatcher) deleteDimension(dimensionName string) error {
 		go m.publishEvent(event) // Publish asynchronously
 	}
 
+	if exists {
+		logger.InfoContext(m.ctx, "dimension deleted", "dimension", dimensionName)
+	}
+
 	return nil
 }
 
 // FindBestMatch finds the best matching rule for a query
-func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) {
+func (m *MemoryMatcherEngine) FindBestMatch(query *QueryRule) (*MatchResult, error) {
 	start := time.Now()
 
 	// Update query count using atomic operation (no lock needed)
@@ -626,6 +666,7 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 		m.updateCacheStats(true)
 		// Update average query time without lock
 		m.updateQueryTimeStats(time.Since(start))
+		logger.DebugContext(m.ctx, "FindBestMatch cache hit", "query", query.Values)
 		return result, nil
 	}
 
@@ -649,6 +690,7 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 	if len(matches) == 0 {
 		// Update average query time without lock
 		m.updateQueryTimeStats(time.Since(start))
+		logger.DebugContext(m.ctx, "FindBestMatch no matches", "query", query.Values)
 		return nil, nil
 	}
 
@@ -659,12 +701,13 @@ func (m *InMemoryMatcher) FindBestMatch(query *QueryRule) (*MatchResult, error) 
 
 	// Update average query time without lock
 	m.updateQueryTimeStats(time.Since(start))
+	logger.DebugContext(m.ctx, "FindBestMatch returning best", "rule_id", best.Rule.ID, "duration_ms", time.Since(start).Milliseconds())
 	return best, nil
 }
 
 // updateQueryTimeStats updates the average query time using lock-free approach
 // This method avoids taking write locks in the read path to prevent starvation
-func (m *InMemoryMatcher) updateQueryTimeStats(queryTime time.Duration) {
+func (m *MemoryMatcherEngine) updateQueryTimeStats(queryTime time.Duration) {
 	// For now, we'll just periodically update the average query time during writes
 	// to avoid taking locks in the read path. This trades off some precision for
 	// better concurrency performance and prevents read starvation.
@@ -673,7 +716,7 @@ func (m *InMemoryMatcher) updateQueryTimeStats(queryTime time.Duration) {
 }
 
 // FindAllMatches finds all matching rules for a query
-func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
+func (m *MemoryMatcherEngine) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
 	// RLocked compatibility wrapper: acquire read lock and call helper
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -684,7 +727,7 @@ func (m *InMemoryMatcher) FindAllMatches(query *QueryRule) ([]*MatchResult, erro
 // slice and returns results in the same order. The entire operation is
 // performed while holding the matcher's read lock so the caller sees a
 // consistent snapshot with respect to concurrent updates.
-func (m *InMemoryMatcher) FindAllMatchesInBatch(queries []*QueryRule) ([][]*MatchResult, error) {
+func (m *MemoryMatcherEngine) FindAllMatchesInBatch(queries []*QueryRule) ([][]*MatchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -709,7 +752,7 @@ func (m *InMemoryMatcher) FindAllMatchesInBatch(queries []*QueryRule) ([][]*Matc
 
 // findAllMatchesNoLock performs the match candidate verification without taking locks.
 // Caller must hold appropriate locks (RLock/RWMutex) if concurrency safety is required.
-func (m *InMemoryMatcher) findAllMatchesNoLock(query *QueryRule) ([]*MatchResult, error) {
+func (m *MemoryMatcherEngine) findAllMatchesNoLock(query *QueryRule) ([]*MatchResult, error) {
 	// Get candidate rules from appropriate forest index
 	forestIndex := m.getForestIndex(query.TenantID, query.ApplicationID)
 	var candidates []RuleWithWeight
@@ -765,7 +808,7 @@ func (m *InMemoryMatcher) findAllMatchesNoLock(query *QueryRule) ([]*MatchResult
 // slice and returns results in the same order. The entire operation is
 // performed while holding the matcher's read lock so the caller sees a
 // consistent snapshot with respect to concurrent updates.
-func (m *InMemoryMatcher) FindBestMatchInBatch(queries []*QueryRule) ([]*MatchResult, error) {
+func (m *MemoryMatcherEngine) FindBestMatchInBatch(queries []*QueryRule) ([]*MatchResult, error) {
 	start := time.Now()
 
 	// Count these as queries (approximate) for stats
@@ -821,7 +864,7 @@ func (m *InMemoryMatcher) FindBestMatchInBatch(queries []*QueryRule) ([]*MatchRe
 }
 
 // dimensionsEqual checks if two rules have identical dimensions
-func (m *InMemoryMatcher) dimensionsEqual(rule1, rule2 *Rule) bool {
+func (m *MemoryMatcherEngine) dimensionsEqual(rule1, rule2 *Rule) bool {
 	if len(rule1.Dimensions) != len(rule2.Dimensions) {
 		return false
 	}
@@ -845,7 +888,7 @@ func (m *InMemoryMatcher) dimensionsEqual(rule1, rule2 *Rule) bool {
 }
 
 // isFullMatch checks if a rule fully matches a query
-func (m *InMemoryMatcher) isFullMatch(rule *Rule, query *QueryRule) bool {
+func (m *MemoryMatcherEngine) isFullMatch(rule *Rule, query *QueryRule) bool {
 	// First check tenant context - rules must match the query's tenant/application context
 	if !rule.MatchesTenantContext(query.TenantID, query.ApplicationID) {
 		return false
@@ -872,7 +915,7 @@ func (m *InMemoryMatcher) isFullMatch(rule *Rule, query *QueryRule) bool {
 }
 
 // matchesDimension checks if a dimension value matches the query value
-func (m *InMemoryMatcher) matchesDimension(dimValue *DimensionValue, queryValue string) bool {
+func (m *MemoryMatcherEngine) matchesDimension(dimValue *DimensionValue, queryValue string) bool {
 	switch dimValue.MatchType {
 	case MatchTypeEqual:
 		return dimValue.Value == queryValue
@@ -888,7 +931,7 @@ func (m *InMemoryMatcher) matchesDimension(dimValue *DimensionValue, queryValue 
 }
 
 // countMatchedDimensions counts how many dimensions matched in the query
-func (m *InMemoryMatcher) countMatchedDimensions(rule *Rule, query *QueryRule) int {
+func (m *MemoryMatcherEngine) countMatchedDimensions(rule *Rule, query *QueryRule) int {
 	count := 0
 	for _, dimValue := range rule.Dimensions {
 		if queryValue, exists := query.Values[dimValue.DimensionName]; exists {
@@ -901,7 +944,7 @@ func (m *InMemoryMatcher) countMatchedDimensions(rule *Rule, query *QueryRule) i
 }
 
 // isRuleExcluded checks if a rule ID is in the map of excluded rules
-func (m *InMemoryMatcher) isRuleExcluded(ruleID string, excludeRules map[string]bool) bool {
+func (m *MemoryMatcherEngine) isRuleExcluded(ruleID string, excludeRules map[string]bool) bool {
 	if len(excludeRules) == 0 {
 		return false
 	}
@@ -910,7 +953,7 @@ func (m *InMemoryMatcher) isRuleExcluded(ruleID string, excludeRules map[string]
 }
 
 // validateRule validates a rule before adding it
-func (m *InMemoryMatcher) validateRule(rule *Rule) error {
+func (m *MemoryMatcherEngine) validateRule(rule *Rule) error {
 	if rule.ID == "" {
 		return fmt.Errorf("rule ID cannot be empty")
 	}
@@ -940,7 +983,7 @@ func (m *InMemoryMatcher) validateRule(rule *Rule) error {
 }
 
 // validateDimensionConsistency ensures rule dimensions match the configured dimensions
-func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
+func (m *MemoryMatcherEngine) validateDimensionConsistency(rule *Rule) error {
 	// Check if any dimensions are configured
 	if m.dimensionConfigs.Count() == 0 {
 		// If no dimensions configured, allow any dimensions (for backward compatibility)
@@ -980,7 +1023,7 @@ func (m *InMemoryMatcher) validateDimensionConsistency(rule *Rule) error {
 }
 
 // validateWeightConflict ensures no two intersecting rules have the same total weight within the same tenant/application
-func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
+func (m *MemoryMatcherEngine) validateWeightConflict(rule *Rule) error {
 	// Skip weight conflict check if duplicate weights are allowed
 	if m.allowDuplicateWeights {
 		return nil
@@ -1023,7 +1066,7 @@ func (m *InMemoryMatcher) validateWeightConflict(rule *Rule) error {
 }
 
 // validateRuleForRebuild validates a rule during rebuild with provided dimension configs
-func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs *DimensionConfigs) error {
+func (m *MemoryMatcherEngine) validateRuleForRebuild(rule *Rule, dimensionConfigs *DimensionConfigs) error {
 	if rule.ID == "" {
 		return fmt.Errorf("rule ID cannot be empty")
 	}
@@ -1049,7 +1092,7 @@ func (m *InMemoryMatcher) validateRuleForRebuild(rule *Rule, dimensionConfigs *D
 }
 
 // validateDimensionConsistencyWithConfigs validates dimensions against provided configs
-func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, dimensionConfigs *DimensionConfigs) error {
+func (m *MemoryMatcherEngine) validateDimensionConsistencyWithConfigs(rule *Rule, dimensionConfigs *DimensionConfigs) error {
 	// Check if any dimensions are configured
 	if dimensionConfigs.Count() == 0 {
 		// If no dimensions configured, allow any dimensions (for backward compatibility)
@@ -1089,7 +1132,7 @@ func (m *InMemoryMatcher) validateDimensionConsistencyWithConfigs(rule *Rule, di
 }
 
 // updateCacheStats updates cache hit rate statistics
-func (m *InMemoryMatcher) updateCacheStats(hit bool) {
+func (m *MemoryMatcherEngine) updateCacheStats(hit bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1102,7 +1145,7 @@ func (m *InMemoryMatcher) updateCacheStats(hit bool) {
 }
 
 // ListRules returns all rules with pagination
-func (m *InMemoryMatcher) ListRules(offset, limit int) ([]*Rule, error) {
+func (m *MemoryMatcherEngine) ListRules(offset, limit int) ([]*Rule, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -1130,7 +1173,7 @@ func (m *InMemoryMatcher) ListRules(offset, limit int) ([]*Rule, error) {
 }
 
 // ListDimensions returns all dimension configurations
-func (m *InMemoryMatcher) ListDimensions() ([]*DimensionConfig, error) {
+func (m *MemoryMatcherEngine) ListDimensions() ([]*DimensionConfig, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -1140,7 +1183,7 @@ func (m *InMemoryMatcher) ListDimensions() ([]*DimensionConfig, error) {
 }
 
 // GetStats returns current statistics
-func (m *InMemoryMatcher) GetStats() *MatcherStats {
+func (m *MemoryMatcherEngine) GetStats() *MatcherStats {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -1157,16 +1200,18 @@ func (m *InMemoryMatcher) GetStats() *MatcherStats {
 
 // SetAllowDuplicateWeights configures whether rules with duplicate weights are allowed
 // By default, duplicate weights are not allowed to ensure deterministic matching
-func (m *InMemoryMatcher) SetAllowDuplicateWeights(allow bool) {
+func (m *MemoryMatcherEngine) SetAllowDuplicateWeights(allow bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.allowDuplicateWeights = allow
 }
 
 // SaveToPersistence saves current state to persistence layer
-func (m *InMemoryMatcher) SaveToPersistence() error {
+func (m *MemoryMatcherEngine) SaveToPersistence() error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	logger.InfoContext(m.ctx, "saving state to persistence", "num_rules", len(m.rules))
 
 	// Save rules
 	var rules []*Rule
@@ -1185,22 +1230,30 @@ func (m *InMemoryMatcher) SaveToPersistence() error {
 		return fmt.Errorf("failed to save dimension configs: %w", err)
 	}
 
+	logger.InfoContext(m.ctx, "saved state to persistence", "num_rules", len(m.rules))
+
 	return nil
 }
 
 // Close closes the matcher and cleans up resources
-func (m *InMemoryMatcher) Close() error {
-	m.cancel()
+func (m *MemoryMatcherEngine) Close() error {
+	logger.InfoContext(m.ctx, "closing matcher", "node_id", m.nodeID)
 
 	if m.broker != nil {
-		return m.broker.Close()
+		if err := m.broker.Close(); err != nil {
+			logger.ErrorContext(m.ctx, "error closing broker", "error", err)
+			return err
+		}
+		logger.InfoContext(m.ctx, "broker closed", "node_id", m.nodeID)
 	}
 
+	logger.InfoContext(m.ctx, "matcher closed", "node_id", m.nodeID)
 	return nil
 }
 
 // Rebuild clears all data and rebuilds the forest from the persistence interface
-func (m *InMemoryMatcher) Rebuild() error {
+func (m *MemoryMatcherEngine) Rebuild() error {
+	logger.InfoContext(m.ctx, "starting rebuild from persistence")
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1278,11 +1331,13 @@ func (m *InMemoryMatcher) Rebuild() error {
 	// Signal that snapshot needs to be updated
 	atomic.StoreInt64(&m.snapshotChanged, 1)
 
+	logger.InfoContext(m.ctx, "rebuild complete", "num_rules", len(m.rules), "num_dimensions", m.dimensionConfigs.Count())
+
 	return nil
 }
 
 // Health checks if the matcher is healthy
-func (m *InMemoryMatcher) Health() error {
+func (m *MemoryMatcherEngine) Health() error {
 	// Check persistence health
 	if err := m.persistence.Health(m.ctx); err != nil {
 		return fmt.Errorf("persistence unhealthy: %w", err)
@@ -1299,7 +1354,7 @@ func (m *InMemoryMatcher) Health() error {
 }
 
 // publishEvent publishes an event to the message queue
-func (m *InMemoryMatcher) publishEvent(event *Event) {
+func (m *MemoryMatcherEngine) publishEvent(event *Event) {
 	if m.broker == nil {
 		return
 	}
@@ -1309,6 +1364,6 @@ func (m *InMemoryMatcher) publishEvent(event *Event) {
 
 	if err := m.broker.Publish(ctx, event); err != nil {
 		// Log error but don't fail the operation
-		slog.Error("Failed to publish event", "error", err)
+		logger.ErrorContext(m.ctx, "Failed to publish event", "error", err)
 	}
 }

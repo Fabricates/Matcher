@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -1321,7 +1322,7 @@ func TestForestOptimizationEfficiency(t *testing.T) {
 
 func TestWeightConflictWithIntersection(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-weight-conflict")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-weight-conflict", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1359,7 +1360,7 @@ func TestWeightConflictWithIntersection(t *testing.T) {
 
 	t.Run("ConflictBetweenIntersectingRulesWithSameWeight", func(t *testing.T) {
 		// Create a fresh engine for this test
-		engine2, err := NewInMemoryMatcher(persistence, nil, "test-weight-conflict-2")
+		engine2, err := NewMatcherEngine(context.Background(), persistence, nil, "test-weight-conflict-2", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine2: %v", err)
 		}
@@ -1398,7 +1399,7 @@ func TestWeightConflictWithIntersection(t *testing.T) {
 
 	t.Run("NoConflictBetweenIntersectingRulesWithDifferentWeights", func(t *testing.T) {
 		// Create a fresh engine for this test
-		engine3, err := NewInMemoryMatcher(persistence, nil, "test-weight-conflict-3")
+		engine3, err := NewMatcherEngine(context.Background(), persistence, nil, "test-weight-conflict-3", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine3: %v", err)
 		}
@@ -1439,7 +1440,7 @@ func TestWeightConflictWithStatus(t *testing.T) {
 
 	t.Run("AllowSameWeightDifferentStatus", func(t *testing.T) {
 		// Test that rules with same weight but different status can coexist
-		engine, err := NewInMemoryMatcher(persistence, nil, "test-status-same-weight")
+		engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-status-same-weight", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -1480,7 +1481,7 @@ func TestWeightConflictWithStatus(t *testing.T) {
 
 	t.Run("ConflictSameWeightSameStatus", func(t *testing.T) {
 		// Test that rules with same weight and same status conflict
-		engine, err := NewInMemoryMatcher(persistence, nil, "test-status-conflict")
+		engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-status-conflict", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -1523,7 +1524,7 @@ func TestWeightConflictWithStatus(t *testing.T) {
 
 	t.Run("AllowMultipleDifferentStatuses", func(t *testing.T) {
 		// Test that multiple rules with same weight can coexist with different statuses
-		engine, err := NewInMemoryMatcher(persistence, nil, "test-multiple-statuses")
+		engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-multiple-statuses", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -1580,7 +1581,7 @@ func TestWeightConflictWithStatus(t *testing.T) {
 
 	t.Run("StatusUniquenessWithinSameWeight", func(t *testing.T) {
 		// Test that only one rule per status is allowed for the same weight
-		engine, err := NewInMemoryMatcher(persistence, nil, "test-status-uniqueness")
+		engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-status-uniqueness", nil, 0)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -1653,7 +1654,7 @@ func TestWeightConflictWithStatus(t *testing.T) {
 func TestAutomaticWeightPopulation(t *testing.T) {
 	// Create an engine with dimension configurations
 	persistence := NewJSONPersistence("./test_data_weight_population")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-weight-population")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-weight-population", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1694,7 +1695,7 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 	}
 
 	// Verify total weight calculation
-	totalWeight := rule.CalculateTotalWeight(engine.dimensionConfigs)
+	totalWeight := rule.CalculateTotalWeight(engine.GetDimensionConfigs())
 	expectedWeight := 0.0 // No explicit weights set
 	if totalWeight != expectedWeight {
 		t.Errorf("Expected total weight %.1f, got %.1f", expectedWeight, totalWeight)
@@ -1704,7 +1705,7 @@ func TestAutomaticWeightPopulation(t *testing.T) {
 func TestZeroWeightWhenNoDimensionConfig(t *testing.T) {
 	// Create an engine without dimension configurations
 	persistence := NewJSONPersistence("./test_data_default_weight")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-default-weight")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-default-weight", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1726,7 +1727,7 @@ func TestZeroWeightWhenNoDimensionConfig(t *testing.T) {
 func TestDimensionWithWeightBackwardCompatibility(t *testing.T) {
 	// Create an engine with dimension configurations
 	persistence := NewJSONPersistence("./test_data_backward_compat")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-backward-compat")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-backward-compat", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

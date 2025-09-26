@@ -106,7 +106,7 @@ func dumpMultiLevelCacheToFile(cache *MultiLevelCache, filename string) error {
 }
 
 // DumpForestToFile dumps the forest in concise graph format to a file
-func DumpForestToFile(m *InMemoryMatcher, filename string) error {
+func DumpForestToFile(m *MemoryMatcherEngine, filename string) error {
 	// We'll produce two files per requested filename:
 	//  - <filename>.mermaid : concise graph listing edges between node keys (dimension#value+match)
 

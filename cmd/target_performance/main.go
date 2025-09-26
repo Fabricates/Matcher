@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -28,11 +29,7 @@ func main() {
 	runtime.ReadMemStats(&memStart)
 
 	// Create engine
-	engine, err := matcher.NewInMemoryMatcher(
-		matcher.NewJSONPersistence("./target_perf_data"),
-		nil,
-		"target-test",
-	)
+	engine, err := matcher.NewMatcherEngine(context.Background(), matcher.NewJSONPersistence("./target_perf_data"), nil, "target-test", nil, 0)
 	if err != nil {
 		slog.Error("Failed to create matcher", "error", err)
 		os.Exit(1)
@@ -203,7 +200,7 @@ func generateSimpleQuery(id int) *matcher.QueryRule {
 	return matcher.CreateQuery(values)
 }
 
-func runConcurrentTest(engine *matcher.InMemoryMatcher, queries []*matcher.QueryRule, workers int) int64 {
+func runConcurrentTest(engine *matcher.MatcherEngine, queries []*matcher.QueryRule, workers int) int64 {
 	var wg sync.WaitGroup
 	var successCount int64
 	var mu sync.Mutex

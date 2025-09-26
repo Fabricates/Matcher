@@ -393,7 +393,7 @@ func TestForestCandidateRulesWithRule(t *testing.T) {
 func TestMatcherHealthCoverage(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
 
-	engine, err := NewInMemoryMatcher(persistence, nil, "health-test")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "health-test", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestMatcherHealthCoverage(t *testing.T) {
 
 	// Test with failed persistence to trigger error case
 	invalidPersistence := NewJSONPersistence("/invalid/path")
-	engine2, err := NewInMemoryMatcher(invalidPersistence, nil, "health-test-2")
+	engine2, err := NewMatcherEngine(context.Background(), invalidPersistence, nil, "health-test-2", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine with invalid persistence: %v", err)
 	}

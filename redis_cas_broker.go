@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"runtime"
@@ -493,7 +492,7 @@ func (r *RedisCASBroker) pollForEvents(ctx context.Context) {
 		case <-ticker.C:
 			if err := r.checkForNewEvents(ctx); err != nil {
 				// Log error but continue
-				fmt.Printf("Error checking for new events: %v\n", err)
+				logger.ErrorContext(ctx, "Error checking for new events", "error", err)
 			}
 		}
 	}
@@ -506,6 +505,7 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 	eventData, err := r.client.Get(ctx, r.eventKey).Result()
 	if err != nil {
 		if err == redis.Nil {
+			logger.DebugContext(ctx, "No redis events found")
 			return nil // No events yet
 		}
 		return err
@@ -513,6 +513,7 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 
 	var latestEvent LatestEvent
 	if err := json.Unmarshal([]byte(eventData), &latestEvent); err != nil {
+		logger.ErrorContext(ctx, "Failed to unmarshal latest event", "error", err)
 		return fmt.Errorf("failed to unmarshal latest event: %w", err)
 	}
 
@@ -520,10 +521,13 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 	defer r.timestampMu.Unlock()
 
 	// Check if this is a new event
-	if latestEvent.Timestamp <= r.lastTimestamp ||
-		math.Abs(float64(time.Now().UnixNano()-r.lastTimestamp)) < messageInterval {
-		slog.WarnContext(ctx, "Delay too close events", "latest", latestEvent, "last", r.lastTimestamp)
+	if latestEvent.Timestamp <= r.lastTimestamp {
 		return nil // No new events
+	}
+
+	if math.Abs(float64(time.Now().UnixNano()-r.lastTimestamp)) < messageInterval {
+		logger.WarnContext(ctx, "Delay too close events", "latest", latestEvent, "last", r.lastTimestamp)
+		return nil
 	}
 
 	// Skip events from this node
@@ -545,6 +549,7 @@ func (r *RedisCASBroker) checkForNewEvents(ctx context.Context) error {
 	select {
 	case r.subscription <- rebuildEvent:
 		// Event sent successfully
+		logger.InfoContext(ctx, "Event published locally", "last", r.lastTimestamp, "latest", latestEvent.Timestamp)
 		r.lastTimestamp = latestEvent.Timestamp
 	case <-ctx.Done():
 		return ctx.Err()
@@ -603,11 +608,13 @@ func (r *RedisCASBroker) WaitForTimestamp(ctx context.Context, targetTimestamp i
 		case <-time.After(100 * time.Millisecond):
 			// Continue polling - check for new events manually
 			if err := r.checkForNewEvents(ctx); err != nil {
+				logger.ErrorContext(ctx, "Checking for events error", "error", err)
 				return fmt.Errorf("error checking for events: %w", err)
 			}
 		}
 	}
 
+	logger.ErrorContext(ctx, "Waiting for timestamp timeout", "target", targetTimestamp)
 	return fmt.Errorf("timeout waiting for timestamp %d", targetTimestamp)
 }
 
@@ -623,6 +630,7 @@ func (r *RedisCASBroker) GetLatestEvent(ctx context.Context) (*LatestEvent, erro
 
 	var latestEvent LatestEvent
 	if err := json.Unmarshal([]byte(eventData), &latestEvent); err != nil {
+		logger.ErrorContext(ctx, "Failed to unmarshal latest event", "error", err)
 		return nil, fmt.Errorf("failed to unmarshal latest event: %w", err)
 	}
 

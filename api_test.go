@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"testing"
@@ -1407,7 +1408,7 @@ func TestDynamicConfigsIntegration(t *testing.T) {
 
 func TestDeleteDimensionCoverage(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "delete-dim-test")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "delete-dim-test", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1515,7 +1516,7 @@ func TestMatcherEngineFullAPIIntegration(t *testing.T) {
 		t.Errorf("Failed to add dimension: %v", err)
 	}
 
-	// Add a rule and test RebuildIndex
+	// Add a rule and test Rebuild
 	rule := NewRule("rebuild-test").
 		Dimension("region", "us-west", MatchTypeEqual).
 		Build()
@@ -1523,8 +1524,8 @@ func TestMatcherEngineFullAPIIntegration(t *testing.T) {
 		t.Errorf("Failed to add rule: %v", err)
 	}
 
-	if err := engine.RebuildIndex(); err != nil {
-		t.Errorf("RebuildIndex failed: %v", err)
+	if err := engine.Rebuild(); err != nil {
+		t.Errorf("Rebuild failed: %v", err)
 	}
 }
 
@@ -1655,7 +1656,7 @@ func TestTypesAPIIntegration(t *testing.T) {
 func TestPublicUpdateAndGetRule(t *testing.T) {
 	// Create matcher with mock persistence
 	persistence := NewJSONPersistence("./test_data")
-	matcher, err := NewInMemoryMatcher(persistence, nil, "test-node-1")
+	matcher, err := NewMatcherEngine(context.Background(), persistence, nil, "test-node-1", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create matcher: %v", err)
 	}
@@ -1743,7 +1744,7 @@ func TestPublicUpdateAndGetRule(t *testing.T) {
 func TestPublicAPIImmutability(t *testing.T) {
 	// Create matcher with mock persistence
 	persistence := NewJSONPersistence("./test_data")
-	matcher, err := NewInMemoryMatcher(persistence, nil, "test-node-1")
+	matcher, err := NewMatcherEngine(context.Background(), persistence, nil, "test-node-1", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create matcher: %v", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,7 +16,7 @@ func main() {
 	// Create a matcher with the forest index
 	persistence := matcher.NewJSONPersistence("./demo_data")
 
-	engine, err := matcher.NewMatcherEngine(persistence, nil, "demo-node")
+	engine, err := matcher.NewMatcherEngine(context.Background(), persistence, nil, "demo-node", nil, 0)
 	if err != nil {
 		slog.Error("Failed to create matcher engine", "error", err)
 		os.Exit(1)
