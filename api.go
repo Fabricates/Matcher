@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -8,9 +9,20 @@ import (
 	"time"
 )
 
+// logger is a package-level alias to the default slog logger. Use the
+// contextual logging helpers (InfoContext, WarnContext, ErrorContext,
+// DebugContext) when a context is available from the matcher instance.
+var logger = slog.Default()
+
+func SetLogger(log *slog.Logger) {
+	if log != nil {
+		logger = log
+	}
+}
+
 // MatcherEngine provides a simple, high-level API for the rule matching system
 type MatcherEngine struct {
-	matcher      *InMemoryMatcher
+	matcher      *MemoryMatcherEngine
 	persistence  PersistenceInterface
 	eventBroker  Broker // Changed from eventSub to eventBroker
 	nodeID       string // Create forest index
@@ -18,16 +30,19 @@ type MatcherEngine struct {
 }
 
 // NewMatcherEngine creates a new matcher engine with the specified persistence and event broker
-func NewMatcherEngine(persistence PersistenceInterface, eventBroker Broker, nodeID string) (*MatcherEngine, error) {
-	matcher, err := NewInMemoryMatcher(persistence, eventBroker, nodeID)
+// Note: ctx should not be cancelled in normal status
+func NewMatcherEngine(ctx context.Context, persistence PersistenceInterface, broker Broker, nodeID string, dcs *DimensionConfigs, initialTimeout time.Duration) (*MatcherEngine, error) {
+	matcher, err := newInMemoryMatcherEngine(ctx, persistence, broker, nodeID, dcs, initialTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create matcher: %w", err)
 	}
 
+	logger.InfoContext(matcher.ctx, "created matcher engine", "node_id", nodeID)
+
 	return &MatcherEngine{
 		matcher:     matcher,
 		persistence: persistence,
-		eventBroker: eventBroker,
+		eventBroker: broker,
 		nodeID:      nodeID,
 	}, nil
 }
@@ -37,7 +52,8 @@ func NewMatcherEngineWithDefaults(dataDir string) (*MatcherEngine, error) {
 	persistence := NewJSONPersistence(dataDir)
 	// Generate a default node ID based on hostname or use a UUID
 	nodeID := GenerateDefaultNodeID()
-	return NewMatcherEngine(persistence, nil, nodeID)
+	logger.InfoContext(context.Background(), "creating matcher engine with defaults", "data_dir", dataDir)
+	return NewMatcherEngine(context.Background(), persistence, nil, nodeID, nil, 0)
 }
 
 // RuleBuilder provides a fluent API for building rules
@@ -132,11 +148,13 @@ func (rb *RuleBuilder) Build() *Rule {
 
 // AddRule adds a rule to the engine
 func (me *MatcherEngine) AddRule(rule *Rule) error {
+	logger.InfoContext(me.matcher.ctx, "engine.AddRule", "rule_id", rule.ID)
 	return me.matcher.AddRule(rule)
 }
 
 // UpdateRule updates an existing rule
 func (me *MatcherEngine) UpdateRule(rule *Rule) error {
+	logger.InfoContext(me.matcher.ctx, "engine.UpdateRule", "rule_id", rule.ID)
 	return me.matcher.updateRule(rule)
 }
 
@@ -202,7 +220,13 @@ func (me *MatcherEngine) GetRule(ruleID string) (*Rule, error) {
 
 // DeleteRule removes a rule by ID
 func (me *MatcherEngine) DeleteRule(ruleID string) error {
+	logger.InfoContext(me.matcher.ctx, "engine.DeleteRule", "rule_id", ruleID)
 	return me.matcher.DeleteRule(ruleID)
+}
+
+// GetDimensionConfigs returns deep cloned DimensionConfigs instance
+func (me *MatcherEngine) GetDimensionConfigs() *DimensionConfigs {
+	return me.matcher.GetDimensionConfigs()
 }
 
 // AddDimension adds a new dimension configuration
@@ -218,6 +242,7 @@ func (me *MatcherEngine) SetAllowDuplicateWeights(allow bool) {
 
 // FindBestMatch finds the best matching rule for a query
 func (me *MatcherEngine) FindBestMatch(query *QueryRule) (*MatchResult, error) {
+	logger.DebugContext(me.matcher.ctx, "engine.FindBestMatch", "query", query.Values)
 	return me.matcher.FindBestMatch(query)
 }
 
@@ -226,21 +251,30 @@ func (me *MatcherEngine) FindBestMatch(query *QueryRule) (*MatchResult, error) {
 // atomic snapshot view for a group of queries with respect to concurrent
 // updates.
 func (me *MatcherEngine) FindBestMatchInBatch(queries ...*QueryRule) ([]*MatchResult, error) {
+	logger.DebugContext(me.matcher.ctx, "engine.FindBestMatchInBatch", "num_queries", len(queries))
 	return me.matcher.FindBestMatchInBatch(queries)
 }
 
 // FindAllMatches finds all matching rules for a query
 func (me *MatcherEngine) FindAllMatches(query *QueryRule) ([]*MatchResult, error) {
+	logger.DebugContext(me.matcher.ctx, "engine.FindAllMatches", "query", query.Values)
 	return me.matcher.FindAllMatches(query)
 }
 
 // FindAllMatches finds all matching rules for a query
 func (me *MatcherEngine) FindAllMatchesInBatch(query ...*QueryRule) ([][]*MatchResult, error) {
+	logger.DebugContext(me.matcher.ctx, "engine.FindAllMatchesInBatch", "num_queries", len(query))
 	return me.matcher.FindAllMatchesInBatch(query)
+}
+
+// LoadDimensions loads all dimensions in bulk
+func (me *MatcherEngine) LoadDimensions(configs []*DimensionConfig) {
+	me.matcher.LoadDimensions(configs)
 }
 
 // ListRules returns all rules with pagination
 func (me *MatcherEngine) ListRules(offset, limit int) ([]*Rule, error) {
+	logger.DebugContext(me.matcher.ctx, "engine.ListRules", "offset", offset, "limit", limit)
 	return me.matcher.ListRules(offset, limit)
 }
 
@@ -256,6 +290,7 @@ func (me *MatcherEngine) GetStats() *MatcherStats {
 
 // Save saves the current state to persistence
 func (me *MatcherEngine) Save() error {
+	logger.InfoContext(me.matcher.ctx, "engine.Save requested")
 	return me.matcher.SaveToPersistence()
 }
 
@@ -269,6 +304,7 @@ func (me *MatcherEngine) Close() error {
 	if me.autoSaveStop != nil {
 		close(me.autoSaveStop)
 	}
+	logger.InfoContext(me.matcher.ctx, "engine closing")
 	return me.matcher.Close()
 }
 
@@ -286,9 +322,10 @@ func (me *MatcherEngine) AutoSave(interval time.Duration) chan<- bool {
 			case <-ticker.C:
 				if err := me.Save(); err != nil {
 					// Log error but continue
-					slog.Error("Auto-save error", "error", err)
+					logger.ErrorContext(me.matcher.ctx, "Auto-save error", "error", err)
 				}
 			case <-stopChan:
+				logger.InfoContext(me.matcher.ctx, "autosave stopped")
 				return
 			}
 		}
@@ -306,8 +343,6 @@ func (me *MatcherEngine) BatchAddRules(rules []*Rule) error {
 	}
 	return nil
 }
-
-// Convenience methods for quick rule creation
 
 // AddSimpleRule creates a rule with all exact matches
 func (me *MatcherEngine) AddSimpleRule(id string, dimensions map[string]string, manualWeight *float64) error {
@@ -338,6 +373,49 @@ func (me *MatcherEngine) AddAnyRule(id string, dimensionNames []string, manualWe
 
 	rule := builder.Build()
 	return me.AddRule(rule)
+}
+
+// GetForestStats returns detailed forest index statistics
+func (me *MatcherEngine) GetForestStats() map[string]interface{} {
+	me.matcher.mu.RLock()
+	defer me.matcher.mu.RUnlock()
+
+	stats := make(map[string]interface{})
+
+	for key, forestIndex := range me.matcher.forestIndexes {
+		stats[key] = forestIndex.GetStats()
+	}
+
+	// Add summary stats
+	stats["total_forests"] = len(me.matcher.forestIndexes)
+	stats["total_rules"] = len(me.matcher.rules)
+
+	return stats
+}
+
+// ClearCache clears the query cache
+func (me *MatcherEngine) ClearCache() {
+	me.matcher.cache.Clear()
+}
+
+// GetCacheStats returns cache statistics
+func (me *MatcherEngine) GetCacheStats() map[string]interface{} {
+	return me.matcher.cache.Stats()
+}
+
+// ValidateRule validates a rule before adding it
+func (me *MatcherEngine) ValidateRule(rule *Rule) error {
+	return me.matcher.validateRule(rule)
+}
+
+// Rebuild rebuilds the forest index (useful after bulk operations)
+func (me *MatcherEngine) Rebuild() error {
+	// Use the existing Rebuild method which is already tenant-aware
+	return me.matcher.Rebuild()
+}
+
+func (me *MatcherEngine) SaveToPersistence() error {
+	return me.matcher.SaveToPersistence()
 }
 
 // CreateQuery creates a query from a map of dimension values
@@ -471,45 +549,6 @@ func CreateQueryWithAllRulesTenantAndExcluded(tenantID, applicationID string, va
 		IncludeAllRules: true,
 		ExcludeRules:    excludeMap,
 	}
-}
-
-// GetForestStats returns detailed forest index statistics
-func (me *MatcherEngine) GetForestStats() map[string]interface{} {
-	me.matcher.mu.RLock()
-	defer me.matcher.mu.RUnlock()
-
-	stats := make(map[string]interface{})
-
-	for key, forestIndex := range me.matcher.forestIndexes {
-		stats[key] = forestIndex.GetStats()
-	}
-
-	// Add summary stats
-	stats["total_forests"] = len(me.matcher.forestIndexes)
-	stats["total_rules"] = len(me.matcher.rules)
-
-	return stats
-}
-
-// ClearCache clears the query cache
-func (me *MatcherEngine) ClearCache() {
-	me.matcher.cache.Clear()
-}
-
-// GetCacheStats returns cache statistics
-func (me *MatcherEngine) GetCacheStats() map[string]interface{} {
-	return me.matcher.cache.Stats()
-}
-
-// ValidateRule validates a rule before adding it
-func (me *MatcherEngine) ValidateRule(rule *Rule) error {
-	return me.matcher.validateRule(rule)
-}
-
-// RebuildIndex rebuilds the forest index (useful after bulk operations)
-func (me *MatcherEngine) RebuildIndex() error {
-	// Use the existing Rebuild method which is already tenant-aware
-	return me.matcher.Rebuild()
 }
 
 // GenerateDefaultNodeID generates a default node ID based on hostname and random suffix

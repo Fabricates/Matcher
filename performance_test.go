@@ -71,14 +71,14 @@ func runPerformanceTest(t *testing.T, config BenchmarkConfig) PerformanceMetrics
 	debug.FreeOSMemory()
 
 	// Create matcher with optimized settings
-	engine, err := NewInMemoryMatcher(NewJSONPersistence("./test_perf_data"), nil, "perf-test")
+	engine, err := NewMatcherEngine(context.Background(), NewJSONPersistence("./test_perf_data"), nil, "perf-test", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create matcher: %v", err)
 	}
 	defer engine.Close()
 
 	// Allow duplicate weights for performance testing to avoid weight conflicts with similar rules
-	engine.allowDuplicateWeights = true
+	engine.SetAllowDuplicateWeights(true)
 
 	// Configure dimensions
 	dimensions := generateDimensions(config.NumDimensions)
@@ -367,7 +367,7 @@ func logPerformanceMetrics(t *testing.T, config BenchmarkConfig, metrics Perform
 // BenchmarkQueryPerformance provides Go benchmark results
 func BenchmarkQueryPerformance(b *testing.B) {
 	// Create test engine
-	engine, err := NewInMemoryMatcher(NewJSONPersistence("./bench_data"), nil, "bench-test")
+	engine, err := NewMatcherEngine(context.Background(), NewJSONPersistence("./bench_data"), nil, "bench-test", nil, 0)
 	if err != nil {
 		b.Fatalf("Failed to create matcher: %v", err)
 	}
@@ -429,7 +429,7 @@ func BenchmarkMemoryEfficiency(b *testing.B) {
 			runtime.ReadMemStats(&memBefore)
 
 			// Create and populate engine
-			engine, err := NewInMemoryMatcher(NewJSONPersistence("./mem_bench_data"), nil, "mem-test")
+			engine, err := NewMatcherEngine(context.Background(), NewJSONPersistence("./mem_bench_data"), nil, "mem-test", nil, 0)
 			if err != nil {
 				b.Fatalf("Failed to create matcher: %v", err)
 			}
@@ -473,7 +473,7 @@ func BenchmarkMemoryEfficiency(b *testing.B) {
 func TestRebuildStarvationFix(t *testing.T) {
 	// Create persistence and engine
 	persistence := NewJSONPersistence(t.TempDir())
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-starvation")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-starvation", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

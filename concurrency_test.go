@@ -1,6 +1,7 @@
 package matcher
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -1921,14 +1922,14 @@ func TestQueryDuringUpdateConsistency(t *testing.T) {
 func TestBasicUpdateRule(t *testing.T) {
 	// Create engine with mock persistence
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewMatcherEngine(persistence, nil, "test-node-1")
+	engine, err := NewMatcherEngine(context.Background(), persistence, nil, "test-node-1", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create matcher: %v", err)
 	}
 	defer engine.Close()
 
 	// Add test dimensions
-	err = addTestDimensions(engine.matcher)
+	err = addTestDimensions(engine)
 	if err != nil {
 		t.Fatalf("Failed to initialize dimensions: %v", err)
 	}

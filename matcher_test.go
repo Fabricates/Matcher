@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+type matcherEngine interface {
+	AddDimension(config *DimensionConfig) error
+	LoadDimensions(configs []*DimensionConfig)
+}
+
 func getDimensions() []*DimensionConfig {
 	return []*DimensionConfig{
 		NewDimensionConfig("product", 0, true),
@@ -18,7 +23,7 @@ func getDimensions() []*DimensionConfig {
 }
 
 // Helper function to add test dimensions for backward compatibility
-func addTestDimensions(engine *InMemoryMatcher) error {
+func addTestDimensions(engine matcherEngine) error {
 	for _, dim := range getDimensions() {
 		if err := engine.AddDimension(dim); err != nil {
 			return err
@@ -28,21 +33,21 @@ func addTestDimensions(engine *InMemoryMatcher) error {
 }
 
 // Helper function to add only the required test dimensions
-func addTestDimensionsMinimal(engine *InMemoryMatcher) error {
+func addTestDimensionsMinimal(engine matcherEngine) error {
 	dimensions := []*DimensionConfig{
 		NewDimensionConfig("product", 0, true),
 		NewDimensionConfig("route", 1, false),
 		NewDimensionConfig("tool", 2, false),
 	}
 
-	engine.dimensionConfigs.LoadBulk(dimensions)
+	engine.LoadDimensions(dimensions)
 	return nil
 }
 
 func TestBasicMatching(t *testing.T) {
 	// Create engine with mock persistence
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-1")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-1", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -118,7 +123,7 @@ func TestBasicMatching(t *testing.T) {
 
 func TestPrefixMatching(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-2")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-2", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -161,7 +166,7 @@ func TestPrefixMatching(t *testing.T) {
 
 func TestSuffixMatching(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-3")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-3", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -204,7 +209,7 @@ func TestSuffixMatching(t *testing.T) {
 
 func TestAnyMatching(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-4")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-4", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -251,7 +256,7 @@ func TestAnyMatching(t *testing.T) {
 
 func TestWeightPriority(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-5")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-5", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -305,7 +310,7 @@ func TestWeightPriority(t *testing.T) {
 
 func TestManualWeightOverride(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-6")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-6", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -363,7 +368,7 @@ func TestManualWeightOverride(t *testing.T) {
 
 func TestCaching(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-7")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-7", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -416,7 +421,7 @@ func TestCaching(t *testing.T) {
 
 func TestPerformance(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-8")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-8", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -477,7 +482,7 @@ func TestPerformance(t *testing.T) {
 
 func TestDynamicDimensions(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-9")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-9", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -532,7 +537,7 @@ func TestEventSubscription(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
 	eventSub := NewMockEventSubscriber()
 
-	engine, err := NewInMemoryMatcher(persistence, eventSub, "test-node-10")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, eventSub, "test-node-10", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine with event subscriber: %v", err)
 	}
@@ -581,7 +586,7 @@ func TestEventSubscription(t *testing.T) {
 
 func TestDimensionConsistencyValidation(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-consistency")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-consistency", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -667,7 +672,7 @@ func TestDimensionConsistencyValidation(t *testing.T) {
 func TestRebuild(t *testing.T) {
 	// Create engine with mock persistence
 	persistence := NewJSONPersistence("./test_data_rebuild")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-rebuild")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-rebuild", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -788,7 +793,7 @@ func TestRebuild(t *testing.T) {
 
 func TestExcludeRules(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-exclude", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -958,7 +963,7 @@ func TestExcludeRules(t *testing.T) {
 
 func TestExcludeRulesWithFindAllMatches(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-all")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-exclude-all", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1072,7 +1077,7 @@ func TestExcludeRulesWithFindAllMatches(t *testing.T) {
 
 func TestExcludeRulesWithTenants(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "test-node-exclude-tenants")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "test-node-exclude-tenants", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -1156,11 +1161,11 @@ func TestExcludeRulesWithTenants(t *testing.T) {
 	})
 }
 
-func TestNewInMemoryMatcherWithContext(t *testing.T) {
+func TestNewMatcherEngine(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
 	ctx := context.Background()
 
-	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-context")
+	engine, err := newInMemoryMatcherEngine(ctx, persistence, nil, "test-node-context", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine with context: %v", err)
 	}
@@ -1200,12 +1205,12 @@ func TestNewInMemoryMatcherWithContext(t *testing.T) {
 	}
 }
 
-func TestNewInMemoryMatcherWithContextTimeout(t *testing.T) {
+func TestNewMatcherEngineTimeout(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-timeout")
+	engine, err := newInMemoryMatcherEngine(ctx, persistence, nil, "test-node-timeout", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine with timeout context: %v", err)
 	}
@@ -1248,11 +1253,11 @@ func TestNewInMemoryMatcherWithContextTimeout(t *testing.T) {
 	}
 }
 
-func TestNewInMemoryMatcherWithContextCancellation(t *testing.T) {
+func TestNewMatcherEngineCancellation(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
 	ctx, cancel := context.WithCancel(context.Background())
 
-	engine, err := NewInMemoryMatcherWithContext(ctx, persistence, nil, "test-node-cancel")
+	engine, err := newInMemoryMatcherEngine(ctx, persistence, nil, "test-node-cancel", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine with cancellable context: %v", err)
 	}
@@ -1298,20 +1303,20 @@ func TestNewInMemoryMatcherWithContextCancellation(t *testing.T) {
 	}
 }
 
-func TestNewInMemoryMatcherWithContextEquivalentToDefault(t *testing.T) {
-	// Test that NewInMemoryMatcherWithContext with background context behaves the same as NewInMemoryMatcher
+func TestNewMatcherEngineEquivalentToDefault(t *testing.T) {
+	// Test that newInMeomoryMatcherEngine with background context behaves the same as NewInMemoryMatcher
 	persistence1 := NewJSONPersistence("./test_data_default")
 	persistence2 := NewJSONPersistence("./test_data_context")
 
 	ctx := context.Background()
 
-	engine1, err := NewInMemoryMatcher(persistence1, nil, "test-node-default")
+	engine1, err := newInMemoryMatcherEngine(context.Background(), persistence1, nil, "test-node-default", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create default engine: %v", err)
 	}
 	defer engine1.Close()
 
-	engine2, err := NewInMemoryMatcherWithContext(ctx, persistence2, nil, "test-node-context")
+	engine2, err := newInMemoryMatcherEngine(ctx, persistence2, nil, "test-node-context", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create context engine: %v", err)
 	}
@@ -1907,7 +1912,7 @@ func TestDAGStatistics(t *testing.T) {
 
 func TestMultiTenantFunctionality(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewInMemoryMatcher(persistence, nil, "multitenant-test")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "multitenant-test", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -2026,7 +2031,7 @@ func TestRuleStatus(t *testing.T) {
 
 func TestSetAllowDuplicateWeights(t *testing.T) {
 	persistence := NewJSONPersistence("./test_data")
-	engine, err := NewMatcherEngine(persistence, nil, "duplicate-weights-test")
+	engine, err := newInMemoryMatcherEngine(context.Background(), persistence, nil, "duplicate-weights-test", nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

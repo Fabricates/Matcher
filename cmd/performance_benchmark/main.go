@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -113,11 +114,7 @@ func runPerformanceBenchmark(config BenchmarkConfig) (PerformanceResult, error) 
 	var setupStart = time.Now()
 
 	// Create matcher engine
-	engine, err := matcher.NewInMemoryMatcher(
-		matcher.NewJSONPersistence("./perf_test_data"),
-		nil,
-		"perf-benchmark",
-	)
+	engine, err := matcher.NewMatcherEngine(context.Background(), matcher.NewJSONPersistence("./perf_test_data"), nil, "perf-benchmark", nil, 0)
 	if err != nil {
 		return PerformanceResult{}, fmt.Errorf("failed to create matcher: %w", err)
 	}
@@ -213,7 +210,7 @@ func runPerformanceBenchmark(config BenchmarkConfig) (PerformanceResult, error) 
 	}, nil
 }
 
-func runConcurrentQueries(engine *matcher.InMemoryMatcher, queries []*matcher.QueryRule, config BenchmarkConfig) (int64, int64) {
+func runConcurrentQueries(engine *matcher.MatcherEngine, queries []*matcher.QueryRule, config BenchmarkConfig) (int64, int64) {
 	var wg sync.WaitGroup
 	var successCount, totalCount int64
 	var mu sync.Mutex
