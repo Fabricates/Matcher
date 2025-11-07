@@ -89,15 +89,17 @@ The rule matching engine now automatically populates dimension weights from dime
 
 ```go
 // Configure dimensions with weights for different match types
-engine.AddDimension(NewDimensionConfig("product", 0, true, 15.0))
-engine.AddDimension(NewDimensionConfig("environment", 1, false, 8.0))
+engine.AddDimension(matcher.NewDimensionConfig("product", 0, true).
+    SetWeight(matcher.MatchTypeEqual, 15.0))
+engine.AddDimension(matcher.NewDimensionConfig("environment", 1, false).
+    SetWeight(matcher.MatchTypeEqual, 8.0))
 
 // Or create with specific weights per match type
-productConfig := NewDimensionConfigWithWeights("product", 0, true, map[MatchType]float64{
-    MatchTypeEqual:  15.0,
-    MatchTypePrefix: 10.0,
-    MatchTypeSuffix: 8.0,
-}, 5.0) // default weight for undefined match types
+productConfig := matcher.NewDimensionConfigWithWeights("product", 0, true, map[matcher.MatchType]float64{
+    matcher.MatchTypeEqual:  15.0,
+    matcher.MatchTypePrefix: 10.0,
+    matcher.MatchTypeSuffix: 8.0,
+})
 engine.AddDimension(productConfig)
 
 // Create rules without specifying weights - they're auto-populated!
@@ -109,20 +111,21 @@ rule := matcher.NewRule("auto-weight-rule").
 
 ### Backward Compatibility
 
-For cases where you need explicit weight control, use `DimensionWithWeight()`:
+For cases where you need explicit weight control, use `ManualWeight()` to override the calculated weight:
 
 ```go
 rule := matcher.NewRule("explicit-weight-rule").
-    Dimension("product", "ProductA", matcher.MatchTypeEqual).              // Auto: 15.0 from config
-    DimensionWithWeight("environment", "prod", matcher.MatchTypeEqual, 12.0). // Explicit: 12.0
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).    // Weight: 15.0 from config
+    Dimension("environment", "prod", matcher.MatchTypeEqual).    // Weight: 8.0 from config
+    ManualWeight(20.0).  // Override total weight to 20.0 (instead of calculated 23.0)
     Build()
 ```
 
 ### Weight Resolution
 
-1. **Configured dimensions**: Use weight from `DimensionConfig.Weight`
-2. **Explicit weights**: Use weight from `DimensionWithWeight()` method
-3. **Unconfigured dimensions**: Default to weight `1.0`
+1. **Automatic weights**: Dimensions automatically get weights from `DimensionConfig` based on match type
+2. **Manual weight override**: Use `ManualWeight()` method to set total rule weight explicitly
+3. **Unconfigured dimensions**: Default to weight `0.0` when no dimension config exists
 
 ## Dimension Consistency Validation
 
@@ -139,9 +142,12 @@ By default, the system enforces consistent rule structures once dimensions are c
 engine := matcher.NewMatcherEngineWithDefaults("./data")
 
 // Configure dimensions first
-engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
-engine.AddDimension(NewDimensionConfig("environment", 1, true, 8.0))
-engine.AddDimension(NewDimensionConfig("region", 2, false, 5.0))
+engine.AddDimension(matcher.NewDimensionConfig("product", 0, true).
+    SetWeight(matcher.MatchTypeEqual, 10.0))
+engine.AddDimension(matcher.NewDimensionConfig("environment", 1, true).
+    SetWeight(matcher.MatchTypeEqual, 8.0))
+engine.AddDimension(matcher.NewDimensionConfig("region", 2, false).
+    SetWeight(matcher.MatchTypeEqual, 5.0))
 ```
 
 ### Rule Validation
@@ -191,14 +197,16 @@ engine := matcher.NewMatcherEngineWithDefaults("./data")
 
 // Default: duplicate weights are not allowed
 rule1 := matcher.NewRule("rule1").
-    DimensionWithWeight("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    DimensionWithWeight("environment", "production", matcher.MatchTypeEqual, 5.0).
-    Build() // Total weight: 15.0
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("environment", "production", matcher.MatchTypeEqual).
+    ManualWeight(15.0).
+    Build()
 
 rule2 := matcher.NewRule("rule2").
-    DimensionWithWeight("product", "ProductB", matcher.MatchTypeEqual, 7.0).
-    DimensionWithWeight("environment", "staging", matcher.MatchTypeEqual, 8.0).
-    Build() // Total weight: 15.0 (same as rule1)
+    Dimension("product", "ProductB", matcher.MatchTypeEqual).
+    Dimension("environment", "staging", matcher.MatchTypeEqual).
+    ManualWeight(15.0).  // Same as rule1
+    Build()
 
 engine.AddRule(rule1) // ✅ Success
 engine.AddRule(rule2) // ❌ Error: weight conflict
@@ -213,15 +221,15 @@ engine.AddRule(rule2) // ✅ Success
 Weight conflicts are detected based on the total calculated weight:
 
 ```go
-// Calculated weight: sum of all dimension weights
+// Calculated weight: sum of all dimension weights from configs
 rule1 := matcher.NewRule("calculated").
-    DimensionWithWeight("product", "ProductA", matcher.MatchTypeEqual, 10.0).
-    DimensionWithWeight("route", "main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).  // 10.0 from config
+    Dimension("route", "main", matcher.MatchTypeEqual).        // 5.0 from config
     Build() // Total weight: 15.0
 
 // Manual weight: overrides calculated weight
 rule2 := matcher.NewRule("manual").
-    DimensionWithWeight("product", "ProductB", matcher.MatchTypeEqual, 20.0).
+    Dimension("product", "ProductB", matcher.MatchTypeEqual).  // Would be 10.0 from config
     ManualWeight(15.0). // Total weight: 15.0 (conflicts with rule1)
     Build()
 
@@ -328,14 +336,19 @@ func main() {
     }
     defer engine.Close()
     
-    // Initialize default dimensions
-    engine.InitializeDefaultDimensions()
+    // Add dimensions with weights
+    engine.AddDimension(matcher.NewDimensionConfig("product", 0, true).
+        SetWeight(matcher.MatchTypeEqual, 10.0))
+    engine.AddDimension(matcher.NewDimensionConfig("route", 1, false).
+        SetWeight(matcher.MatchTypeEqual, 5.0))
+    engine.AddDimension(matcher.NewDimensionConfig("tool", 2, false).
+        SetWeight(matcher.MatchTypeEqual, 8.0))
     
     // Add a rule
     rule := matcher.NewRule("production_rule").
-        Product("ProductA", matcher.MatchTypeEqual, 10.0).
-        Route("main", matcher.MatchTypeEqual, 5.0).
-        Tool("laser", matcher.MatchTypeEqual, 8.0).
+        Dimension("product", "ProductA", matcher.MatchTypeEqual).
+        Dimension("route", "main", matcher.MatchTypeEqual).
+        Dimension("tool", "laser", matcher.MatchTypeEqual).
         Build()
     
     engine.AddRule(rule)
@@ -371,13 +384,6 @@ func main() {
     }
 }
 ```
-    
-    if result != nil {
-        fmt.Printf("Best match: %s (weight: %.2f)\n", 
-            result.Rule.ID, result.TotalWeight)
-    }
-}
-```
 
 ## 🎯 Match Types Examples
 
@@ -385,7 +391,7 @@ func main() {
 
 ```go
 rule := matcher.NewRule("exact_rule").
-    Product("ProductA", matcher.MatchTypeEqual, 10.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
     Build()
 // Matches: "ProductA" exactly
 // Doesn't match: "ProductB", "ProductABC", "productA"
@@ -395,7 +401,7 @@ rule := matcher.NewRule("exact_rule").
 
 ```go
 rule := matcher.NewRule("prefix_rule").
-    Product("Prod", matcher.MatchTypePrefix, 8.0).
+    Dimension("product", "Prod", matcher.MatchTypePrefix).
     Build()
 // Matches: "Prod", "ProductA", "Production", "Produce"
 // Doesn't match: "MyProduct", "prod" (case sensitive)
@@ -405,7 +411,7 @@ rule := matcher.NewRule("prefix_rule").
 
 ```go
 rule := matcher.NewRule("suffix_rule").
-    Tool("_beta", matcher.MatchTypeSuffix, 10.0).
+    Dimension("tool", "_beta", matcher.MatchTypeSuffix).
     Build()
 // Matches: "tool_beta", "test_beta", "version_beta"
 // Doesn't match: "beta_test", "_beta_version"
@@ -415,8 +421,8 @@ rule := matcher.NewRule("suffix_rule").
 
 ```go
 rule := matcher.NewRule("fallback_rule").
-    Product("", matcher.MatchTypeAny, 0.0).  // Empty value for Any match
-    Route("main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "", matcher.MatchTypeAny).  // Empty value for Any match
+    Dimension("route", "main", matcher.MatchTypeEqual).
     ManualWeight(5.0).
     Build()
 // Matches: any product value when route="main"
@@ -431,9 +437,9 @@ The engine supports partial queries where you don't specify all dimensions:
 ```go
 // Rule with 3 dimensions
 rule := matcher.NewRule("three_dim_rule").
-    Product("ProductA", matcher.MatchTypeEqual, 10.0).
-    Route("main", matcher.MatchTypeEqual, 5.0).
-    Tool("", matcher.MatchTypeAny, 0.0).  // Use MatchTypeAny for optional dimensions
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
+    Dimension("tool", "", matcher.MatchTypeAny).  // Use MatchTypeAny for optional dimensions
     Build()
 
 // Partial query with only 2 dimensions
@@ -456,14 +462,14 @@ The engine supports excluding specific rules from query results, useful for A/B 
 ```go
 // Create multiple rules
 rule1 := matcher.NewRule("rule1").
-    Product("ProductA", matcher.MatchTypeEqual, 10.0).
-    Route("main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
     ManualWeight(15.0).
     Build()
 
 rule2 := matcher.NewRule("rule2").
-    Product("ProductA", matcher.MatchTypeEqual, 10.0).
-    Route("main", matcher.MatchTypeEqual, 5.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
+    Dimension("route", "main", matcher.MatchTypeEqual).
     ManualWeight(10.0).
     Build()
 
@@ -498,12 +504,13 @@ allMatches, _ := engine.FindAllMatches(excludeQuery) // Returns only rule2
 
 ```go
 // Add custom dimension
-customDim := NewDimensionConfig("region", 5, false, 15.0)
+customDim := matcher.NewDimensionConfig("region", 5, false).
+    SetWeight(matcher.MatchTypeEqual, 15.0)
 engine.AddDimension(customDim)
 
 // Use in rules
 rule := matcher.NewRule("regional_rule").
-    Product("ProductA", matcher.MatchTypeEqual, 10.0).
+    Dimension("product", "ProductA", matcher.MatchTypeEqual).
     Dimension("region", "us-west", matcher.MatchTypeEqual).
     Build()
 ```
@@ -527,8 +534,10 @@ longRule := matcher.NewRule("long").
     Build()
 
 // With configured dimensions - consistent rule structure required
-engine.AddDimension(NewDimensionConfig("product", 0, true, 10.0))
-engine.AddDimension(NewDimensionConfig("route", 1, false, 5.0))
+engine.AddDimension(matcher.NewDimensionConfig("product", 0, true).
+    SetWeight(matcher.MatchTypeEqual, 10.0))
+engine.AddDimension(matcher.NewDimensionConfig("route", 1, false).
+    SetWeight(matcher.MatchTypeEqual, 5.0))
 
 // Now all rules must conform to these dimensions
 validRule := matcher.NewRule("valid").
